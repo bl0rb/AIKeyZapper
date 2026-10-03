@@ -1,11 +1,11 @@
-@testable import AISwitchCore
+@testable import KeyZapperCore
 import Foundation
 import Testing
 
-/// Opt-in: AISWITCH_E2E_CLAUDE=/path/to/claude swift test --filter EndToEnd
+/// Opt-in: KEYZAPPER_E2E_CLAUDE=/path/to/claude swift test --filter EndToEnd
 /// Uses the real login keychain (fake sk-test-* keys, removed afterwards), the built helper, the binder,
 /// real Claude Code with an isolated CLAUDE_CONFIG_DIR, and spike/mock_gateway.py on 127.0.0.1.
-@Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["AISWITCH_E2E_CLAUDE"] != nil))
+@Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["KEYZAPPER_E2E_CLAUDE"] != nil))
 struct EndToEndTests {
     static let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 
@@ -42,15 +42,15 @@ struct EndToEndTests {
     }
 
     @Test func twoProjectsUseTheirOwnKeysWithoutFallback() throws {
-        let claude = ProcessInfo.processInfo.environment["AISWITCH_E2E_CLAUDE"]!
-        let helper = Self.repoRoot.appendingPathComponent(".build/debug/aiswitch-key-helper").path
+        let claude = ProcessInfo.processInfo.environment["KEYZAPPER_E2E_CLAUDE"]!
+        let helper = Self.repoRoot.appendingPathComponent(".build/debug/keyzapper-helper").path
         try #require(FileManager.default.isExecutableFile(atPath: helper))
         let work = makeTempDir("e2e")
         let port = 18472
         let a = Profile(name: "E2E A", endpoint: URL(string: "http://127.0.0.1:\(port)/projA")!, modelAlias: "")
         let b = Profile(name: "E2E B", endpoint: URL(string: "http://127.0.0.1:\(port)/projB")!, modelAlias: "")
         try MetadataStore(fileURL: URL(fileURLWithPath: work + "/home/state.json")).save(AppState(profiles: [a, b]))
-        let env = ["HOME": NSHomeDirectory(), "PATH": "/usr/bin:/bin", "AISWITCH_HOME": work + "/home"]
+        let env = ["HOME": NSHomeDirectory(), "PATH": "/usr/bin:/bin", "KEYZAPPER_HOME": work + "/home"]
         defer {
             for p in [a, b] { _ = try? run(helper, ["delete", "--profile", p.id.uuidString], env: env) }
         }

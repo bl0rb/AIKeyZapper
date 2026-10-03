@@ -2,11 +2,12 @@ import AppKit
 import SwiftUI
 
 @main
-struct ProjectAISwitchApp: App {
+struct KeyZapperApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @ViewState private var model = AppModel()
 
     var body: some Scene {
-        WindowGroup("ProjectAISwitch") {
+        WindowGroup("KeyZapper") {
             ContentView()
                 .environment(model)
                 .frame(minWidth: 780, minHeight: 500)
@@ -17,6 +18,12 @@ struct ProjectAISwitchApp: App {
                 }
         }
     }
+}
+
+/// Single-window tool: quit when the window closes (like System Settings). Otherwise the app keeps running
+/// without a window and a Dock click does not bring one back. The key helper works without the app.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }
 
 /// Uses SwiftUI's `State` property wrapper directly. The `@State` macro needs the SwiftUIMacros plugin,

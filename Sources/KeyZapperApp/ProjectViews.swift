@@ -1,4 +1,4 @@
-import AISwitchCore
+import KeyZapperCore
 import AppKit
 import SwiftUI
 

@@ -18,7 +18,7 @@ public struct BindingStatus: Equatable, Sendable {
 public struct ClaudeSettingsBinder {
     public static let localSettingsPath = ".claude/settings.local.json"
     public static let gitExcludeLine = "/.claude/settings.local.json"
-    static let gitExcludeComment = "# ProjectAISwitch: projektlokale Claude-Code-Einstellungen"
+    static let gitExcludeComment = "# KeyZapper: projektlokale Claude-Code-Einstellungen"
     static let authEnvKeys = ["ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]
     static let providerEnvKeys = ["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"]
 
@@ -79,20 +79,20 @@ public struct ClaudeSettingsBinder {
 
     public func apply(profile: Profile, folder: String, previous: WorkspaceBinding?) throws -> ApplyResult {
         let root = canonicalPath(folder)
-        guard Self.isDirectory(root) else { throw AISwitchError.folderNotFound(root) }
+        guard Self.isDirectory(root) else { throw KeyZapperError.folderNotFound(root) }
         let expected = Self.settingsRoot(for: root)
-        guard expected == root else { throw AISwitchError.notSettingsRoot(folder: root, root: expected) }
+        guard expected == root else { throw KeyZapperError.notSettingsRoot(folder: root, root: expected) }
 
         let desired = desiredValues(for: profile)
         let previousValues = previous?.managedValues ?? [:]
         let outer = environmentConflicts(root: root)
         if outer.contains(where: { $0.severity == .blocking }) {
-            throw AISwitchError.settingsConflicts(outer.filter { $0.severity == .blocking })
+            throw KeyZapperError.settingsConflicts(outer.filter { $0.severity == .blocking })
         }
         let changed = try Self.withLock {
             try mutateLocalSettings(root: root) { settings in
                 let local = Self.localConflicts(settings, desired: desired, previous: previousValues)
-                guard local.isEmpty else { throw AISwitchError.settingsConflicts(local) }
+                guard local.isEmpty else { throw KeyZapperError.settingsConflicts(local) }
                 for (key, value) in desired { settings.setValue(value, at: key) }
                 for (key, value) in previousValues where desired[key] == nil && settings.stringValue(at: key) == value {
                     settings.removeValue(at: key)
@@ -215,7 +215,7 @@ public struct ClaudeSettingsBinder {
             try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             var data = try JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
             data.append(0x0A)
-            let tmp = url.deletingLastPathComponent().appendingPathComponent(".settings.local.json.aiswitch-\(UUID().uuidString)")
+            let tmp = url.deletingLastPathComponent().appendingPathComponent(".settings.local.json.keyzapper-\(UUID().uuidString)")
             try data.write(to: tmp)
             let permissions = (try? fm.attributesOfItem(atPath: url.path)[.posixPermissions]) ?? 0o644
             try fm.setAttributes([.posixPermissions: permissions], ofItemAtPath: tmp.path)
@@ -225,21 +225,21 @@ public struct ClaudeSettingsBinder {
             }
             guard rename(tmp.path, url.path) == 0 else {
                 try? fm.removeItem(at: tmp)
-                throw AISwitchError.settingsUnreadable("\(url.path): \(String(cString: strerror(errno)))")
+                throw KeyZapperError.settingsUnreadable("\(url.path): \(String(cString: strerror(errno)))")
             }
             return true
         }
-        throw AISwitchError.concurrentModification(url.path)
+        throw KeyZapperError.concurrentModification(url.path)
     }
 
     static func readData(_ url: URL) throws -> Data {
-        do { return try Data(contentsOf: url) } catch { throw AISwitchError.settingsUnreadable(url.path) }
+        do { return try Data(contentsOf: url) } catch { throw KeyZapperError.settingsUnreadable(url.path) }
     }
 
     static func parse(_ data: Data) throws -> [String: Any] {
         if data.allSatisfy({ [0x20, 0x0A, 0x0D, 0x09].contains($0) }) { return [:] }
         guard let object = try? JSONSerialization.jsonObject(with: data), let dict = object as? [String: Any] else {
-            throw AISwitchError.settingsUnreadable("kein gültiges JSON-Objekt")
+            throw KeyZapperError.settingsUnreadable("kein gültiges JSON-Objekt")
         }
         return dict
     }
@@ -283,7 +283,7 @@ public struct ClaudeSettingsBinder {
     // MARK: Helpers
 
     static func withLock<T>(_ body: () throws -> T) throws -> T {
-        let lockPath = FileManager.default.temporaryDirectory.appendingPathComponent("ProjectAISwitch-settings.lock").path
+        let lockPath = FileManager.default.temporaryDirectory.appendingPathComponent("KeyZapper-settings.lock").path
         let fd = open(lockPath, O_CREAT | O_RDWR, 0o600)
         guard fd >= 0 else { return try body() }
         defer { flock(fd, LOCK_UN); close(fd) }

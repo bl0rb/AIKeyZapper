@@ -1,4 +1,4 @@
-@testable import AISwitchCore
+@testable import KeyZapperCore
 import Foundation
 import Testing
 
@@ -7,7 +7,7 @@ struct ClaudeSettingsBinderTests {
     let binder: ClaudeSettingsBinder
 
     init() {
-        binder = ClaudeSettingsBinder(helperPath: "/Applications/Project AI'Switch.app/Contents/Helpers/aiswitch-key-helper",
+        binder = ClaudeSettingsBinder(helperPath: "/Applications/Project AI'Switch.app/Contents/Helpers/keyzapper-helper",
                                       managedSettingsPaths: [], userSettingsPath: "/nonexistent/settings.json")
     }
 
@@ -36,7 +36,7 @@ struct ClaudeSettingsBinderTests {
 
     @Test func helperCommandSurvivesSpacesAndQuotesInPath() throws {
         let dir = makeTempDir("helper dir's")
-        let helper = dir + "/aiswitch-key-helper"
+        let helper = dir + "/keyzapper-helper"
         try "#!/bin/sh\nprintf 'ok:%s' \"$3\"\n".write(toFile: helper, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helper)
         let command = try #require(ClaudeSettingsBinder(helperPath: helper, managedSettingsPaths: []).desiredValues(for: sampleProfile)["apiKeyHelper"])
@@ -48,9 +48,9 @@ struct ClaudeSettingsBinderTests {
     @Test func foreignValuesAreConflictsAndLeftUntouched() throws {
         writeJSON(["apiKeyHelper": "/usr/local/bin/other-helper", "env": ["ANTHROPIC_API_KEY": "sk-user"]], to: settingsPath)
         let before = FileManager.default.contents(atPath: settingsPath)
-        #expect(throws: AISwitchError.self) { try binder.apply(profile: sampleProfile, folder: root, previous: nil) }
+        #expect(throws: KeyZapperError.self) { try binder.apply(profile: sampleProfile, folder: root, previous: nil) }
         #expect(FileManager.default.contents(atPath: settingsPath) == before)
-        do { _ = try binder.apply(profile: sampleProfile, folder: root, previous: nil) } catch let AISwitchError.settingsConflicts(conflicts) {
+        do { _ = try binder.apply(profile: sampleProfile, folder: root, previous: nil) } catch let KeyZapperError.settingsConflicts(conflicts) {
             #expect(conflicts.count == 2)
             #expect(!conflicts.map(\.message).joined().contains("sk-user"))
         }
@@ -74,7 +74,7 @@ struct ClaudeSettingsBinderTests {
         json["model"] = "opus"
         writeJSON(json, to: settingsPath)
         #expect(binder.inspect(a.binding, profile: sampleProfile).health == .drifted(["env.ANTHROPIC_MODEL"]))
-        #expect(throws: AISwitchError.self) { try binder.apply(profile: sampleProfile, folder: root, previous: nil) }
+        #expect(throws: KeyZapperError.self) { try binder.apply(profile: sampleProfile, folder: root, previous: nil) }
 
         let kept = try binder.revert(a.binding)
         #expect(kept == ["env.ANTHROPIC_MODEL"])
@@ -95,14 +95,14 @@ struct ClaudeSettingsBinderTests {
     @Test func invalidJSONIsNotOverwritten() throws {
         try FileManager.default.createDirectory(atPath: root + "/.claude", withIntermediateDirectories: true)
         try "{ broken".write(toFile: settingsPath, atomically: true, encoding: .utf8)
-        #expect(throws: AISwitchError.self) { try binder.apply(profile: sampleProfile, folder: root, previous: nil) }
+        #expect(throws: KeyZapperError.self) { try binder.apply(profile: sampleProfile, folder: root, previous: nil) }
         #expect(try String(contentsOfFile: settingsPath, encoding: .utf8) == "{ broken")
     }
 
     @Test func missingFolderStatus() {
         let binding = WorkspaceBinding(path: root + "/gone", profileID: sampleProfile.id)
         #expect(binder.inspect(binding, profile: sampleProfile).health == .folderMissing)
-        #expect(throws: AISwitchError.folderNotFound(root + "/gone")) { try binder.apply(profile: sampleProfile, folder: root + "/gone", previous: nil) }
+        #expect(throws: KeyZapperError.folderNotFound(root + "/gone")) { try binder.apply(profile: sampleProfile, folder: root + "/gone", previous: nil) }
     }
 
     @Test func managedSettingsAndProviderSwitchesBlock() throws {
@@ -114,7 +114,7 @@ struct ClaudeSettingsBinderTests {
         let conflicts = strict.environmentConflicts(root: root)
         #expect(conflicts.filter { $0.severity == .blocking }.count == 2)
         #expect(conflicts.filter { $0.severity == .warning }.count == 1)
-        #expect(throws: AISwitchError.self) { try strict.apply(profile: sampleProfile, folder: root, previous: nil) }
+        #expect(throws: KeyZapperError.self) { try strict.apply(profile: sampleProfile, folder: root, previous: nil) }
         #expect(!FileManager.default.fileExists(atPath: settingsPath))
     }
 }
@@ -130,7 +130,7 @@ struct GitIntegrationTests {
         sh("git worktree add -q --detach '\(worktree)'", in: repo)
         #expect(ClaudeSettingsBinder.settingsRoot(for: repo + "/sub/deep") == repo)
         #expect(ClaudeSettingsBinder.settingsRoot(for: worktree) == repo)
-        #expect(throws: AISwitchError.notSettingsRoot(folder: repo + "/sub", root: repo)) {
+        #expect(throws: KeyZapperError.notSettingsRoot(folder: repo + "/sub", root: repo)) {
             try binder.apply(profile: sampleProfile, folder: repo + "/sub", previous: nil)
         }
         let plain = makeTempDir("plain")
@@ -157,6 +157,6 @@ struct GitIntegrationTests {
         gitInit(repo)
         writeJSON(["model": "opus"], to: repo + "/.claude/settings.local.json")
         sh("git add -f .claude/settings.local.json && git -c user.email=t@t -c user.name=t commit -qm add", in: repo)
-        #expect(throws: AISwitchError.self) { try binder.apply(profile: sampleProfile, folder: repo, previous: nil) }
+        #expect(throws: KeyZapperError.self) { try binder.apply(profile: sampleProfile, folder: repo, previous: nil) }
     }
 }

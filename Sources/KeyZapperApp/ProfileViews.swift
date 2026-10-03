@@ -1,4 +1,4 @@
-import AISwitchCore
+import KeyZapperCore
 import SwiftUI
 
 struct ProfileEditor: View {
@@ -16,8 +16,12 @@ struct ProfileEditor: View {
         return url
     }
 
+    private var isManaged: Bool { existing.map { model.isManaged($0.id) } ?? false }
+
+    private var endpointAllowed: Bool { endpointURL.map(model.config.isEndpointAllowed) ?? true }
+
     private var isValid: Bool {
-        !name.trimmingCharacters(in: .whitespaces).isEmpty && endpointURL != nil && (existing != nil || !key.isEmpty)
+        !name.trimmingCharacters(in: .whitespaces).isEmpty && endpointURL != nil && endpointAllowed && (existing != nil || !key.isEmpty)
     }
 
     var body: some View {
@@ -27,9 +31,14 @@ struct ProfileEditor: View {
                 TextField("LiteLLM-Endpunkt", text: $endpoint, prompt: Text("https://litellm.firma.intern"))
                 if !endpoint.isEmpty && endpointURL == nil {
                     Text("Bitte eine vollständige http(s)-URL angeben.").font(.caption).foregroundStyle(.red)
+                } else if !endpointAllowed {
+                    Text("Host nicht freigegeben. Erlaubt: \(model.config.allowedGatewayHosts.joined(separator: ", "))").font(.caption).foregroundStyle(.red)
                 }
                 TextField("Modellalias", text: $modelAlias, prompt: Text("optional, z. B. claude-sonnet"))
+            } footer: {
+                if isManaged { Text("Von der IT vorgegeben – nur der Key kann geändert werden.").font(.caption).foregroundStyle(.secondary) }
             }
+            .disabled(isManaged)
             Section {
                 SecureField(existing == nil ? "Key" : "Neuer Key", text: $key, prompt: Text(existing == nil ? "sk-…" : "leer lassen, um den Key zu behalten"))
             } footer: {
@@ -53,7 +62,11 @@ struct ProfileEditor: View {
             }
         }
         .onAppear {
-            guard let existing else { return }
+            guard let existing else {
+                endpoint = model.config.defaultEndpoint ?? ""
+                modelAlias = model.config.defaultModelAlias ?? ""
+                return
+            }
             name = existing.name
             endpoint = existing.endpoint.absoluteString
             modelAlias = existing.modelAlias
@@ -99,6 +112,7 @@ struct ProfileDetailView: View {
         Form {
             Section("Profil") {
                 LabeledContent("Name", value: profile.name)
+                if model.isManaged(profile.id) { LabeledContent("Verwaltung", value: "Von der IT vorgegeben") }
                 LabeledContent("Endpunkt", value: profile.endpoint.absoluteString)
                 LabeledContent("Modellalias", value: profile.modelAlias.isEmpty ? "– (Claude-Standard)" : profile.modelAlias)
                 LabeledContent("Key") {
@@ -142,9 +156,9 @@ struct ProfileDetailView: View {
         .navigationTitle(profile.name)
         .toolbar {
             ToolbarItemGroup {
-                Button("Bearbeiten") { editing = true }
+                Button("Bearbeiten") { editing = true }.disabled(model.isManaged(profile.id))
                 Button("Key ersetzen") { replacingKey = true }
-                Button("Profil löschen", role: .destructive) { confirmDelete = true }
+                Button("Profil löschen", role: .destructive) { confirmDelete = true }.disabled(model.isManaged(profile.id))
             }
         }
         .sheet(isPresented: $editing) { ProfileEditor(existing: profile) }

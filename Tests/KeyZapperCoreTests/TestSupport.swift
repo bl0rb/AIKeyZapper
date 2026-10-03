@@ -1,18 +1,18 @@
-@testable import AISwitchCore
+@testable import KeyZapperCore
 import Foundation
 
 final class InMemoryCredentialStore: CredentialStore {
     var items: [String: String] = [:]
-    var failure: AISwitchError?
+    var failure: KeyZapperError?
 
     func read(_ ref: CredentialReference) throws -> String {
         if let failure { throw failure }
-        guard let value = items[ref.account] else { throw AISwitchError.missingCredential(UUID(uuidString: ref.account)!) }
+        guard let value = items[ref.account] else { throw KeyZapperError.missingCredential(UUID(uuidString: ref.account)!) }
         return value
     }
     func write(_ secret: String, label: String, for ref: CredentialReference) throws {
         if let failure { throw failure }
-        guard !secret.isEmpty else { throw AISwitchError.emptyCredential }
+        guard !secret.isEmpty else { throw KeyZapperError.emptyCredential }
         items[ref.account] = secret
     }
     func delete(_ ref: CredentialReference) throws { items[ref.account] = nil }
@@ -20,7 +20,7 @@ final class InMemoryCredentialStore: CredentialStore {
 }
 
 func makeTempDir(_ name: String = "work dir") -> String {
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent("aiswitch-tests-\(UUID().uuidString)/\(name)")
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("keyzapper-tests-\(UUID().uuidString)/\(name)")
     try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return canonicalPath(url.path)
 }

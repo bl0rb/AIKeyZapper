@@ -1,12 +1,13 @@
 import Foundation
 
-/// Contract between Claude Code / the app and `aiswitch-key-helper`.
+/// Contract between Claude Code / the app and `keyzapper-helper`.
 ///
-///     aiswitch-key-helper credential --profile <UUID>   # key on stdout (no newline), used as apiKeyHelper
-///     aiswitch-key-helper store      --profile <UUID>   # key on stdin (never as argument)
-///     aiswitch-key-helper status     --profile <UUID>   # exit 0 if a key exists, 66 if not
-///     aiswitch-key-helper delete     --profile <UUID>
+///     keyzapper-helper credential --profile <UUID>   # key on stdout (no newline), used as apiKeyHelper
+///     keyzapper-helper store      --profile <UUID>   # key on stdin (never as argument)
+///     keyzapper-helper status     --profile <UUID>   # exit 0 if a key exists, 66 if not
+///     keyzapper-helper delete     --profile <UUID>
 ///
+/// Keys are only released for endpoints allowed by `ManagedConfig.allowedGatewayHosts` (exit 78 otherwise).
 /// Messages go to stderr and never contain key material. A failure never falls back to another profile.
 public enum HelperExitCode: Int32, Sendable {
     case ok = 0
@@ -19,7 +20,7 @@ public enum HelperExitCode: Int32, Sendable {
 }
 
 public struct KeyHelperCommand {
-    public static let executableName = "aiswitch-key-helper"
+    public static let executableName = "keyzapper-helper"
 
     public struct Output: Equatable {
         public var exitCode: HelperExitCode
@@ -29,10 +30,12 @@ public struct KeyHelperCommand {
 
     let metadata: MetadataStore
     let store: CredentialStore
+    let config: ManagedConfig
 
-    public init(metadata: MetadataStore, store: CredentialStore) {
+    public init(metadata: MetadataStore, store: CredentialStore, config: ManagedConfig = ManagedConfig()) {
         self.metadata = metadata
         self.store = store
+        self.config = config
     }
 
     public func run(_ args: [String], stdin: () -> String) -> Output {
@@ -50,23 +53,26 @@ public struct KeyHelperCommand {
         } catch {
             return fail(.configError, error.localizedDescription)
         }
+        if ["credential", "store"].contains(args[0]) && !config.isEndpointAllowed(profile.endpoint) {
+            return fail(.configError, "Endpunkt \(profile.endpoint.host() ?? "?") ist laut Firmenrichtlinie (AllowedGatewayHosts) nicht freigegeben.")
+        }
         do {
             switch args[0] {
             case "credential":
                 return Output(exitCode: .ok, stdout: try store.read(profile.credential), stderr: "")
             case "store":
                 let secret = stdin().trimmingCharacters(in: .whitespacesAndNewlines)
-                try store.write(secret, label: "ProjectAISwitch – \(profile.name)", for: profile.credential)
+                try store.write(secret, label: "KeyZapper – \(profile.name)", for: profile.credential)
                 return Output(exitCode: .ok, stdout: "", stderr: "")
             case "status":
                 return try store.exists(profile.credential)
                     ? Output(exitCode: .ok, stdout: "", stderr: "")
-                    : fail(.missingCredential, AISwitchError.missingCredential(id).localizedDescription)
+                    : fail(.missingCredential, KeyZapperError.missingCredential(id).localizedDescription)
             default:
                 try store.delete(profile.credential)
                 return Output(exitCode: .ok, stdout: "", stderr: "")
             }
-        } catch let error as AISwitchError {
+        } catch let error as KeyZapperError {
             return fail(Self.exitCode(for: error), error.localizedDescription)
         } catch {
             return fail(.internalError, error.localizedDescription)
@@ -85,7 +91,7 @@ public struct KeyHelperCommand {
         Output(exitCode: code, stdout: "", stderr: "\(Self.executableName): \(message)\n")
     }
 
-    static func exitCode(for error: AISwitchError) -> HelperExitCode {
+    static func exitCode(for error: KeyZapperError) -> HelperExitCode {
         switch error {
         case .unknownProfile: .unknownProfile
         case .missingCredential, .emptyCredential: .missingCredential

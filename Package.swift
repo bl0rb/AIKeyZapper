@@ -4,16 +4,16 @@ import PackageDescription
 let v5: [SwiftSetting] = [.swiftLanguageMode(.v5)]
 
 let package = Package(
-    name: "ProjectAISwitch",
+    name: "KeyZapper",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "ProjectAISwitch", targets: ["ProjectAISwitchApp"]),
-        .executable(name: "aiswitch-key-helper", targets: ["aiswitch-key-helper"]),
+        .executable(name: "KeyZapper", targets: ["KeyZapperApp"]),
+        .executable(name: "keyzapper-helper", targets: ["keyzapper-helper"]),
     ],
     targets: [
-        .target(name: "AISwitchCore", swiftSettings: v5),
-        .executableTarget(name: "aiswitch-key-helper", dependencies: ["AISwitchCore"], path: "Sources/KeyHelper", swiftSettings: v5),
-        .executableTarget(name: "ProjectAISwitchApp", dependencies: ["AISwitchCore"], swiftSettings: v5),
-        .testTarget(name: "AISwitchCoreTests", dependencies: ["AISwitchCore"], swiftSettings: v5),
+        .target(name: "KeyZapperCore", swiftSettings: v5),
+        .executableTarget(name: "keyzapper-helper", dependencies: ["KeyZapperCore"], path: "Sources/KeyHelper", swiftSettings: v5),
+        .executableTarget(name: "KeyZapperApp", dependencies: ["KeyZapperCore"], swiftSettings: v5),
+        .testTarget(name: "KeyZapperCoreTests", dependencies: ["KeyZapperCore"], swiftSettings: v5),
     ]
 )

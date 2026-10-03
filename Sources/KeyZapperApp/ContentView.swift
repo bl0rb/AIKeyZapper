@@ -1,4 +1,4 @@
-import AISwitchCore
+import KeyZapperCore
 import SwiftUI
 
 enum SidebarItem: Hashable {
@@ -102,10 +102,20 @@ struct ContentView: View {
 
     @ViewBuilder private var banners: some View {
         VStack(spacing: 0) {
+            if let backup = model.availableBackup {
+                Banner(kind: .info,
+                       title: "OneDrive-Backup gefunden: \(backup.profiles.count) Profil(e), \(backup.bindings.count) Projekt(e)",
+                       detail: "Profile und Zuordnungen wiederherstellen? Keys sind nicht im Backup und müssen neu eingetragen werden.",
+                       actions: [BannerAction(title: "Wiederherstellen", action: model.restoreFromBackup),
+                                 BannerAction(title: "Verwerfen", action: model.discardBackup)])
+            }
+            if let problem = model.backupProblem {
+                Banner(kind: .warning, title: problem)
+            }
             if !model.outdatedCLIs.isEmpty {
                 Banner(kind: .warning,
                        title: "Claude-Code-CLI veraltet: \(model.outdatedCLIs.joined(separator: ", "))",
-                       detail: "IntelliJ nutzt diese CLI. Unter \(ClaudeCLI.minimumTestedVersion) gilt die Projektzuordnung nur beim Start direkt im Projektordner. Aktualisieren mit „claude update“.")
+                       detail: "IntelliJ nutzt diese CLI. Unter \(model.minimumCLIVersion) gilt die Projektzuordnung nur beim Start direkt im Projektordner. Aktualisieren mit „claude update“.")
             }
             if let notice = model.notice {
                 Banner(kind: .info, title: notice) { model.notice = nil }
@@ -114,11 +124,17 @@ struct ContentView: View {
     }
 }
 
+struct BannerAction {
+    var title: String
+    var action: () -> Void
+}
+
 struct Banner: View {
     enum Kind { case info, warning }
     var kind: Kind
     var title: String
     var detail: String?
+    var actions: [BannerAction] = []
     var dismiss: (() -> Void)?
 
     var body: some View {
@@ -132,6 +148,7 @@ struct Banner: View {
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .textSelection(.enabled)
+            ForEach(actions.indices, id: \.self) { i in Button(actions[i].title, action: actions[i].action) }
             if let dismiss { Button("Schließen", systemImage: "xmark", action: dismiss).labelStyle(.iconOnly).buttonStyle(.borderless) }
         }
         .padding(.horizontal, 12)

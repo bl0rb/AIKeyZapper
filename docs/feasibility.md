@@ -2,7 +2,7 @@
 
 Stand: 2026-10-03. Prototyp: `spike/run_spike.sh [claude-binary]` (Mock-Gateway `spike/mock_gateway.py`,
 nur `sk-test-*`-Keys, isoliertes `CLAUDE_CONFIG_DIR`; `REAL_CONFIG=1` prüft zusätzlich mit echtem Login,
-`SLOW=1` den 401-Retry-Pfad). Automatisiert: `AISWITCH_E2E_CLAUDE=<claude> swift test`.
+`SLOW=1` den 401-Retry-Pfad). Automatisiert: `KEYZAPPER_E2E_CLAUDE=<claude> swift test`.
 
 ## Getestete Versionen
 
@@ -38,7 +38,7 @@ Abweichung 2.1.206: Einstellungen nur aus `<cwd>/.claude` (T4/T5/T17 → „Not 
 
 * **Helper-Ansatz trägt**, kein Proxy und kein IDE-Plugin nötig.
 * Die App schreibt in `<root>/.claude/settings.local.json` (höchste nicht verwaltete Ebene):
-  `apiKeyHelper = '<App>/Contents/Helpers/aiswitch-key-helper' credential --profile <UUID>`,
+  `apiKeyHelper = '<App>/Contents/Helpers/keyzapper-helper' credential --profile <UUID>`,
   `env.ANTHROPIC_BASE_URL`, optional `env.ANTHROPIC_MODEL`, sowie `env.ANTHROPIC_API_KEY = ""` und
   `env.ANTHROPIC_AUTH_TOKEN = ""` (Neutralisierung, T12).
 * `<root>` = Root des Haupt-Checkouts bei Git-Repos, sonst der gewählte Ordner. **Ein Profil pro Repository**
@@ -52,9 +52,9 @@ Abweichung 2.1.206: Einstellungen nur aus `<cwd>/.claude` (T4/T5/T17 → „Not 
 ## Schnittstellen (verbindlich)
 
 * Datenmodell: `Profile`, `WorkspaceBinding`, `CredentialReference`, `AppState.schemaVersion = 1`
-  (`Sources/AISwitchCore/Models.swift`), gespeichert in `~/Library/Application Support/ProjectAISwitch/state.json` (0600, ohne Keys).
-* Helper: `aiswitch-key-helper credential|store|status|delete --profile <UUID>`; Exit-Codes
-  0 ok · 64 Aufruf · 65 unbekanntes Profil · 66 Key fehlt · 70 intern · 77 Schlüsselbund gesperrt/verweigert · 78 Metadaten.
+  (`Sources/KeyZapperCore/Models.swift`), gespeichert in `~/Library/Application Support/KeyZapper/state.json` (0600, ohne Keys).
+* Helper: `keyzapper-helper credential|store|status|delete --profile <UUID>`; Exit-Codes
+  0 ok · 64 Aufruf · 65 unbekanntes Profil · 66 Key fehlt · 70 intern · 77 Schlüsselbund gesperrt/verweigert · 78 Metadaten oder Endpunkt nicht in `AllowedGatewayHosts`.
 * Konflikte (blockierend): verwaltete Einstellungen mit `apiKeyHelper`/`ANTHROPIC_BASE_URL`/`_API_KEY`/`_AUTH_TOKEN`;
   `CLAUDE_CODE_USE_BEDROCK|VERTEX|FOUNDRY` in einer Ebene; fremde Werte für App-Schlüssel in `settings.local.json`;
   eingecheckte `settings.local.json`; ungültiges JSON. Warnungen: dieselben Schlüssel in Benutzer-/Projekt-`settings.json`.

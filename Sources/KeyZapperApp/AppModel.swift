@@ -1,8 +1,8 @@
-import AISwitchCore
+import KeyZapperCore
 import Foundation
 import Observation
 
-/// Runs `aiswitch-key-helper`, the only process that touches the keychain. Keys go via stdin/stdout, never argv.
+/// Runs `keyzapper-helper`, the only process that touches the keychain. Keys go via stdin/stdout, never argv.
 struct HelperClient: Sendable {
     let url: URL
 
@@ -46,8 +46,15 @@ final class AppModel {
     private(set) var keyPresent: [UUID: Bool] = [:]
     private(set) var statuses: [UUID: BindingStatus] = [:]
     private(set) var outdatedCLIs: [String] = []
+    /// Unrestored OneDrive backup found on a fresh install; while set, the backup is not overwritten.
+    private(set) var availableBackup: AppState?
+    private(set) var backupProblem: String?
     var errorMessage: String?
     var notice: String?
+
+    let config = ManagedConfig.load()
+    private let backupDirectory: URL?
+    var minimumCLIVersion: String { config.minimumClaudeCodeVersion ?? ClaudeCLI.minimumTestedVersion }
 
     private let metadata = MetadataStore()
     /// Set when metadata could not be read (e.g. newer schema); saving is blocked to avoid data loss.
@@ -56,18 +63,43 @@ final class AppModel {
     private var binder: ClaudeSettingsBinder? { helper.map { ClaudeSettingsBinder(helperPath: $0.url.path) } }
 
     init() {
+        backupDirectory = BackupStore.directory(for: config)
         do { state = try metadata.load() } catch {
             metadataUnreadable = true
             errorMessage = error.localizedDescription
         }
+        if config.oneDriveBackup || config.backupDirectory != nil {
+            if let backupDirectory {
+                if state.profiles.isEmpty, let backup = try? BackupStore(directory: backupDirectory).read(), !backup.profiles.isEmpty {
+                    availableBackup = backup
+                }
+            } else {
+                backupProblem = "OneDrive-Backup ist aktiviert, aber es wurde kein OneDrive-Ordner gefunden. Bitte in OneDrive anmelden."
+            }
+        }
+        syncManagedProfiles()
         refresh()
+        let minimum = minimumCLIVersion
         Task {
-            let outdated = await Task.detached { ClaudeCLI.outdatedInstallations().map { "\(($0.path as NSString).abbreviatingWithTildeInPath) \($0.version)" } }.value
+            let outdated = await Task.detached { ClaudeCLI.outdatedInstallations(minimum: minimum).map { "\(($0.path as NSString).abbreviatingWithTildeInPath) \($0.version)" } }.value
             outdatedCLIs = outdated
         }
     }
 
     func profileName(_ id: UUID) -> String { state.profile(id)?.name ?? "Unbekanntes Profil" }
+
+    func isManaged(_ id: UUID) -> Bool { config.profiles.contains { $0.id == id } }
+
+    /// Creates/updates the profiles IT defines via `ManagedProfiles`; developers only add their key.
+    private func syncManagedProfiles() {
+        for managed in config.profiles {
+            var profile = state.profile(managed.id) ?? Profile(id: managed.id, name: managed.name, endpoint: managed.endpoint, modelAlias: managed.modelAlias)
+            profile.name = managed.name
+            profile.endpoint = managed.endpoint
+            profile.modelAlias = managed.modelAlias
+            if state.profile(managed.id) != profile { saveProfile(profile, newKey: nil) }
+        }
+    }
 
     func refresh() {
         guard let helper, let binder else {
@@ -84,6 +116,10 @@ final class AppModel {
 
     @discardableResult
     func saveProfile(_ profile: Profile, newKey: String?) -> Bool {
+        guard config.isEndpointAllowed(profile.endpoint) else {
+            errorMessage = "Der Endpunkt \(profile.endpoint.host() ?? "") ist laut Firmenrichtlinie nicht freigegeben. Erlaubt: \(config.allowedGatewayHosts.joined(separator: ", "))"
+            return false
+        }
         let old = state.profile(profile.id)
         if let i = state.profiles.firstIndex(where: { $0.id == profile.id }) { state.profiles[i] = profile } else { state.profiles.append(profile) }
         guard persist() else { return false }
@@ -181,10 +217,47 @@ final class AppModel {
             errorMessage = "Metadaten konnten nicht gelesen werden; Änderungen werden nicht gespeichert."
             return false
         }
-        do { try metadata.save(state); return true } catch {
+        do { try metadata.save(state) } catch {
             errorMessage = error.localizedDescription
             return false
         }
+        writeBackup()
+        return true
+    }
+
+    // MARK: OneDrive backup (profiles and bindings only, never keys)
+
+    private func writeBackup() {
+        guard let backupDirectory, availableBackup == nil else { return }
+        do {
+            try BackupStore(directory: backupDirectory).write(state)
+            backupProblem = nil
+        } catch {
+            backupProblem = "OneDrive-Backup fehlgeschlagen: \(error.localizedDescription)"
+        }
+    }
+
+    func restoreFromBackup() {
+        guard let backup = availableBackup else { return }
+        for profile in backup.profiles where state.profile(profile.id) == nil { state.profiles.append(profile) }
+        availableBackup = nil
+        guard persist() else { return }
+        var restored = 0
+        for binding in backup.bindings {
+            guard let profile = state.profile(binding.profileID), FileManager.default.fileExists(atPath: binding.path),
+                  apply(profile, folder: binding.path, previous: binding) else { continue }
+            restored += 1
+        }
+        let skipped = backup.bindings.count - restored
+        refresh()
+        notice = "Backup wiederhergestellt: \(backup.profiles.count) Profil(e), \(restored) Projekt(e)"
+            + (skipped > 0 ? ", \(skipped) übersprungen (Ordner fehlt oder Konflikt)" : "")
+            + ". Keys werden nicht gesichert – bitte je Profil neu eintragen."
+    }
+
+    func discardBackup() {
+        availableBackup = nil
+        writeBackup()
     }
 
     static func folderName(_ path: String) -> String { URL(fileURLWithPath: path).lastPathComponent }

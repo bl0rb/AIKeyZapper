@@ -10,7 +10,7 @@ public protocol CredentialStore {
 }
 
 /// macOS login keychain, generic password items (service = `ref.service`, account = profile UUID).
-/// At runtime only `aiswitch-key-helper` talks to the keychain, so the item ACL trusts exactly one binary.
+/// At runtime only `keyzapper-helper` talks to the keychain, so the item ACL trusts exactly one binary.
 public struct KeychainCredentialStore: CredentialStore {
     public init() {}
 
@@ -28,13 +28,13 @@ public struct KeychainCredentialStore: CredentialStore {
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         guard status == errSecSuccess else { throw Self.map(status, ref) }
         guard let data = result as? Data, let secret = String(data: data, encoding: .utf8), !secret.isEmpty else {
-            throw AISwitchError.emptyCredential
+            throw KeyZapperError.emptyCredential
         }
         return secret
     }
 
     public func write(_ secret: String, label: String, for ref: CredentialReference) throws {
-        guard !secret.isEmpty else { throw AISwitchError.emptyCredential }
+        guard !secret.isEmpty else { throw KeyZapperError.emptyCredential }
         let data = Data(secret.utf8)
         let update: [String: Any] = [kSecValueData as String: data, kSecAttrLabel as String: label]
         var status = SecItemUpdate(baseQuery(ref) as CFDictionary, update as CFDictionary)
@@ -60,7 +60,7 @@ public struct KeychainCredentialStore: CredentialStore {
         return true
     }
 
-    static func map(_ status: OSStatus, _ ref: CredentialReference) -> AISwitchError {
+    static func map(_ status: OSStatus, _ ref: CredentialReference) -> KeyZapperError {
         switch status {
         case errSecItemNotFound: .missingCredential(UUID(uuidString: ref.account) ?? UUID())
         case errSecInteractionNotAllowed, errSecNotAvailable: .keychainLocked

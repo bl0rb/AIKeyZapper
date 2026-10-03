@@ -1,0 +1,24 @@
+<key>ManagedProfiles</key>
+<array>
+  <dict>
+    <key>Name</key>
+    <string>Projekt Alpha</string>
+    <key>Endpoint</key>
+    <string>https://litellm.firma.example</string>
+    <key>ModelAlias</key>
+    <string>claude-sonnet</string>
+  </dict>
+</array>
+<key>AllowedGatewayHosts</key>
+<array>
+  <string>litellm.firma.example</string>
+  <string>*.litellm.firma.example</string>
+</array>
+<key>DefaultEndpoint</key>
+<string>https://litellm.firma.example</string>
+<key>DefaultModelAlias</key>
+<string>claude-sonnet</string>
+<key>MinimumClaudeCodeVersion</key>
+<string>2.1.288</string>
+<key>OneDriveBackup</key>
+<true/>

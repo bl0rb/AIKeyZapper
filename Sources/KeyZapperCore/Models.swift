@@ -1,9 +1,9 @@
 import Foundation
 
 /// Points to the keychain item holding a profile's LiteLLM key. The key itself never leaves the keychain
-/// except through `aiswitch-key-helper credential`.
+/// except through `keyzapper-helper credential`.
 public struct CredentialReference: Codable, Hashable, Sendable {
-    public static let defaultService = "ProjectAISwitch.LiteLLM"
+    public static let defaultService = "KeyZapper.LiteLLM"
     public var service: String
     public var account: String
 

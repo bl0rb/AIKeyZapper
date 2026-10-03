@@ -1,6 +1,6 @@
 import Foundation
 
-public enum AISwitchError: Error, Equatable, LocalizedError {
+public enum KeyZapperError: Error, Equatable, LocalizedError {
     case unknownProfile(String)
     case missingCredential(UUID)
     case keychainLocked

@@ -9,19 +9,19 @@ public struct MetadataStore: Sendable {
         self.fileURL = fileURL
     }
 
-    /// `~/Library/Application Support/ProjectAISwitch`, overridable via `AISWITCH_HOME` (tests, spikes).
+    /// `~/Library/Application Support/KeyZapper`, overridable via `KEYZAPPER_HOME` (tests, spikes).
     public static var defaultDirectory: URL {
-        if let override = ProcessInfo.processInfo.environment["AISWITCH_HOME"], !override.isEmpty {
+        if let override = ProcessInfo.processInfo.environment["KEYZAPPER_HOME"], !override.isEmpty {
             return URL(fileURLWithPath: override, isDirectory: true)
         }
         return FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/ProjectAISwitch", isDirectory: true)
+            .appendingPathComponent("Library/Application Support/KeyZapper", isDirectory: true)
     }
 
     public func load() throws -> AppState {
         guard let data = try? Data(contentsOf: fileURL) else {
             if FileManager.default.fileExists(atPath: fileURL.path) {
-                throw AISwitchError.corruptMetadata("\(fileURL.path) ist nicht lesbar")
+                throw KeyZapperError.corruptMetadata("\(fileURL.path) ist nicht lesbar")
             }
             return AppState()
         }
@@ -44,17 +44,17 @@ public struct MetadataStore: Sendable {
         struct Header: Decodable { var schemaVersion: Int }
         let version: Int
         do { version = try JSONDecoder().decode(Header.self, from: data).schemaVersion } catch {
-            throw AISwitchError.corruptMetadata("schemaVersion fehlt")
+            throw KeyZapperError.corruptMetadata("schemaVersion fehlt")
         }
-        guard version <= AppState.currentSchemaVersion else { throw AISwitchError.unsupportedSchemaVersion(version) }
+        guard version <= AppState.currentSchemaVersion else { throw KeyZapperError.unsupportedSchemaVersion(version) }
         switch version {
         case 1:
             do { return try JSONDecoder().decode(AppState.self, from: data) } catch {
-                throw AISwitchError.corruptMetadata(String(describing: error))
+                throw KeyZapperError.corruptMetadata(String(describing: error))
             }
         // Future: case 1 where current > 1 → decode V1 types, map to current, fall through.
         default:
-            throw AISwitchError.unsupportedSchemaVersion(version)
+            throw KeyZapperError.unsupportedSchemaVersion(version)
         }
     }
 }

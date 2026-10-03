@@ -56,11 +56,11 @@ public enum ClaudeCLI {
     public static let minimumTestedVersion = "2.1.288"
     static let candidates = ["~/.local/bin/claude", "~/.claude/local/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
 
-    public static func outdatedInstallations() -> [(path: String, version: String)] {
+    public static func outdatedInstallations(minimum: String = minimumTestedVersion) -> [(path: String, version: String)] {
         candidates.map { ($0 as NSString).expandingTildeInPath }
             .filter { FileManager.default.isExecutableFile(atPath: $0) }
             .compactMap { path in version(of: path).map { (path, $0) } }
-            .filter { isOlder($0.1, than: minimumTestedVersion) }
+            .filter { isOlder($0.1, than: minimum) }
     }
 
     static func version(of path: String) -> String? {

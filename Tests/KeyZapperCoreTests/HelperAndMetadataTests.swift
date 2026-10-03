@@ -1,4 +1,4 @@
-@testable import AISwitchCore
+@testable import KeyZapperCore
 import Foundation
 import Testing
 
@@ -14,10 +14,10 @@ struct MetadataStoreTests {
     }
 
     @Test func rejectsNewerSchemaAndCorruptData() throws {
-        #expect(throws: AISwitchError.unsupportedSchemaVersion(99)) {
+        #expect(throws: KeyZapperError.unsupportedSchemaVersion(99)) {
             try MetadataStore.decode(Data(#"{"schemaVersion":99,"profiles":[],"bindings":[]}"#.utf8))
         }
-        #expect(throws: AISwitchError.self) { try MetadataStore.decode(Data("nope".utf8)) }
+        #expect(throws: KeyZapperError.self) { try MetadataStore.decode(Data("nope".utf8)) }
     }
 }
 

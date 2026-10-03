@@ -1,7 +1,7 @@
-import AISwitchCore
+import KeyZapperCore
 import Foundation
 
-let output = KeyHelperCommand(metadata: MetadataStore(), store: KeychainCredentialStore())
+let output = KeyHelperCommand(metadata: MetadataStore(), store: KeychainCredentialStore(), config: ManagedConfig.load())
     .run(Array(CommandLine.arguments.dropFirst())) {
         String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) ?? ""
     }
