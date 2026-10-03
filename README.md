@@ -41,6 +41,16 @@ Helper-Caches (Standard 5 min), nach einem HTTP 401 oder nach einem Neustart.
 
 ## So funktioniert es
 
+**Einrichtung (einmalig):** Der Key geht per stdin an den Helper und landet nur im Schlüsselbund. Ins Projekt schreibt die App nur Verweise.
+
+![Einrichtung: KeyZapper speichert den Key über keyzapper-helper im Schlüsselbund und schreibt settings.local.json in Repo A und Repo B](docs/diagrams/keyzapper-flow-setup.svg)
+
+**Laufzeit (jede Claude-Anfrage):** Claude Code holt den Key pro Projekt selbst über den Helper, auch wenn die App geschlossen ist.
+
+![Laufzeit: Claude Code in Repo A und Repo B ruft keyzapper-helper mit der eigenen Profil-ID auf und sendet Key A bzw. Key B an LiteLLM](docs/diagrams/keyzapper-flow-runtime.svg)
+
+Die Gesamtansicht mit Erläuterungen liegt unter [docs/diagrams/keyzapper-flow.html](docs/diagrams/keyzapper-flow.html).
+
 Die App schreibt in `<Projekt>/.claude/settings.local.json`:
 
 | Schlüssel | Wert |
