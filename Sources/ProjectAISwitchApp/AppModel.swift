@@ -62,7 +62,7 @@ final class AppModel {
         }
         refresh()
         Task {
-            let outdated = await Task.detached { ClaudeCLI.outdatedInstallations().map { "\($0.path) (\($0.version))" } }.value
+            let outdated = await Task.detached { ClaudeCLI.outdatedInstallations().map { "\(($0.path as NSString).abbreviatingWithTildeInPath) \($0.version)" } }.value
             outdatedCLIs = outdated
         }
     }

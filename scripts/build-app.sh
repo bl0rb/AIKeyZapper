@@ -14,7 +14,8 @@ BIN="$(swift build -c release --show-bin-path)"
 
 APP=dist/ProjectAISwitch.app
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/"
 cp "$BIN/ProjectAISwitch" "$APP/Contents/MacOS/"
 cp "$BIN/aiswitch-key-helper" "$APP/Contents/Helpers/"
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -24,6 +25,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleName</key><string>ProjectAISwitch</string>
   <key>CFBundleExecutable</key><string>ProjectAISwitch</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$VERSION</string>

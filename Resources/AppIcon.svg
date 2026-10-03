@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#06b6d4"/>
+      <stop offset="1" stop-color="#635bff"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <g fill="none" stroke="#e0f7ff" stroke-width="3" stroke-linecap="square">
+    <path d="M12 20 V12 H20"/>
+    <path d="M12 44 V52 H20"/>
+    <path d="M44 52 H52 V44"/>
+  </g>
+  <path fill="#1e1b6b" opacity=".45" d="M17 23h12v3.2h-12zM14 26h6v3.2h-6zM26 26h6v3.2h-6zM14 29h3v3.2h-3zM29 29h24v3.2h-24zM14 32h3v3.2h-3zM29 32h24v3.2h-24zM14 35h6v3.2h-6zM26 35h6v3.2h-6zM41 35h6v3.2h-6zM50 35h3v3.2h-3zM17 38h12v3.2h-12zM41 38h6v3.2h-6zM50 38h3v3.2h-3z"/>
+  <path fill="#ffffff" d="M15.5 21.5h12v3.2h-12zM12.5 24.5h6v3.2h-6zM24.5 24.5h6v3.2h-6zM12.5 27.5h3v3.2h-3zM27.5 27.5h24v3.2h-24zM12.5 30.5h3v3.2h-3zM27.5 30.5h24v3.2h-24zM12.5 33.5h6v3.2h-6zM24.5 33.5h6v3.2h-6zM39.5 33.5h6v3.2h-6zM48.5 33.5h3v3.2h-3zM15.5 36.5h12v3.2h-12zM39.5 36.5h6v3.2h-6zM48.5 36.5h3v3.2h-3z"/>
+  <path d="M50 7 L51.75 12.25 L57 14 L51.75 15.75 L50 21 L48.25 15.75 L43 14 L48.25 12.25 Z" fill="#ffffff"/>
+  <path d="M57 21.5 L57.875 24.125 L60.5 25 L57.875 25.875 L57 28.5 L56.125 25.875 L53.5 25 L56.125 24.125 Z" fill="#cffafe"/>
+</svg>

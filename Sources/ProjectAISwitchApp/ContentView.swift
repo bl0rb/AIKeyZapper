@@ -53,9 +53,11 @@ struct ContentView: View {
                 }
             }
         } detail: {
-            detail
+            VStack(spacing: 0) {
+                banners
+                detail.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
-        .safeAreaInset(edge: .top, spacing: 0) { banners }
         .sheet(isPresented: $showNewProfile) { ProfileEditor(existing: nil) }
         .sheet(isPresented: $showAddProject) { AddProjectSheet() }
         .alert("Fehler", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
@@ -101,10 +103,12 @@ struct ContentView: View {
     @ViewBuilder private var banners: some View {
         VStack(spacing: 0) {
             if !model.outdatedCLIs.isEmpty {
-                Banner(kind: .warning, text: "Veraltete Claude-Code-CLI gefunden: \(model.outdatedCLIs.joined(separator: ", ")). Ältere Versionen lesen Projekteinstellungen nur beim Start im Projektordner selbst (relevant für IntelliJ). Bitte auf ≥ \(ClaudeCLI.minimumTestedVersion) aktualisieren.")
+                Banner(kind: .warning,
+                       title: "Claude-Code-CLI veraltet: \(model.outdatedCLIs.joined(separator: ", "))",
+                       detail: "IntelliJ nutzt diese CLI. Unter \(ClaudeCLI.minimumTestedVersion) gilt die Projektzuordnung nur beim Start direkt im Projektordner. Aktualisieren mit „claude update“.")
             }
             if let notice = model.notice {
-                Banner(kind: .info, text: notice) { model.notice = nil }
+                Banner(kind: .info, title: notice) { model.notice = nil }
             }
         }
     }
@@ -113,18 +117,27 @@ struct ContentView: View {
 struct Banner: View {
     enum Kind { case info, warning }
     var kind: Kind
-    var text: String
+    var title: String
+    var detail: String?
     var dismiss: (() -> Void)?
 
     var body: some View {
-        HStack(alignment: .top) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: kind == .info ? "info.circle.fill" : "exclamationmark.triangle.fill")
                 .foregroundStyle(kind == .info ? Color.accentColor : .orange)
-            Text(text).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).fontWeight(kind == .warning ? .semibold : .regular)
+                if let detail { Text(detail).font(.callout).foregroundStyle(.secondary) }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
             if let dismiss { Button("Schließen", systemImage: "xmark", action: dismiss).labelStyle(.iconOnly).buttonStyle(.borderless) }
         }
-        .padding(10)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .background(kind == .info ? Color.accentColor.opacity(0.12) : Color.orange.opacity(0.15))
+        .overlay(alignment: .bottom) { Divider() }
     }
 }
 
