@@ -11,9 +11,10 @@ public enum GatewayCheckResult: Equatable, Sendable {
 
     public var message: String {
         switch self {
-        case .ok(nil): "Verbindung erfolgreich."
-        case .ok(true): "Verbindung erfolgreich, Modellalias ist verfügbar."
-        case .ok(false): "Verbindung erfolgreich, aber der Modellalias ist für diesen Key nicht freigegeben."
+        case .ok(let modelAvailable):
+            modelAvailable == nil ? "Verbindung erfolgreich."
+                : modelAvailable == true ? "Verbindung erfolgreich, Modellalias ist verfügbar."
+                : "Verbindung erfolgreich, aber der Modellalias ist für diesen Key nicht freigegeben."
         case .unauthorized: "Key wird vom Gateway abgelehnt (ungültig oder gesperrt)."
         case .rateLimited: "Rate-Limit erreicht. Später erneut versuchen."
         case .budgetExceeded: "Budget dieses Keys ist ausgeschöpft."
