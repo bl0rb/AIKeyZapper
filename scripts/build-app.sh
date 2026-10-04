@@ -15,7 +15,7 @@ BIN="$(swift build -c release --show-bin-path)"
 APP=dist/KeyZapper.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources"
-cp Resources/AppIcon.icns "$APP/Contents/Resources/"
+cp Resources/AppIcon.icns LICENSE "$APP/Contents/Resources/"
 cp -R Resources/Localization/*.lproj "$APP/Contents/Resources/"
 cp "$BIN/KeyZapper" "$APP/Contents/MacOS/"
 cp "$BIN/keyzapper-helper" "$APP/Contents/Helpers/"
@@ -34,7 +34,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>$VERSION</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSHumanReadableCopyright</key><string>© 2026 bl0rb · github.com/bl0rb/ClaudeKeyZapper</string>
+  <key>NSHumanReadableCopyright</key><string>© 2026 bl0rb · MIT License · github.com/bl0rb/ClaudeKeyZapper</string>
 </dict></plist>
 PLIST
 

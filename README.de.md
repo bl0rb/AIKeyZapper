@@ -222,3 +222,7 @@ git tag 1.0.0
 ```bash
 git push origin 1.0.0
 ```
+
+## Lizenz
+
+[MIT](LICENSE) © 2026 bl0rb

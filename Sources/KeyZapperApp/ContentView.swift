@@ -31,10 +31,9 @@ struct ContentView: View {
                             Image(systemName: "bolt.horizontal.circle").foregroundStyle(Color.accentColor)
                             Text("Claude Code holt in jedem zugeordneten Projekt den passenden Key automatisch über den Helper – kein manuelles Wechseln nötig. Nach neuen Zuordnungen die Claude-Sitzung einmal neu starten.")
                                 .foregroundStyle(.secondary)
-                            Button("So funktioniert’s") { showHowItWorks = true }.buttonStyle(.link)
                         }
                         .font(.caption)
-                        VersionFooter()
+                        VersionFooter { showHowItWorks = true }
                     }
                     .padding(20)
                 }
@@ -302,6 +301,7 @@ struct ProjectRow: View {
 
 struct VersionFooter: View {
     @Environment(AppModel.self) private var model
+    var showHowItWorks: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -316,6 +316,7 @@ struct VersionFooter: View {
             } else {
                 Text("Updates über die IT").foregroundStyle(.secondary)
             }
+            Button("So funktioniert’s", action: showHowItWorks).buttonStyle(.link)
             Link("Projektseite", destination: URL(string: "https://github.com/\(UpdateChecker.repository)")!)
         }
         .font(.caption)
