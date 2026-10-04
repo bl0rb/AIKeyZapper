@@ -47,6 +47,8 @@ final class AppModel {
     /// Masked key per profile (`••••` + last 4 characters) so the assignment is visible; never the full key.
     private(set) var keyHints: [UUID: String] = [:]
     private(set) var availableUpdate: ReleaseInfo?
+    /// Path of `~/.claude/settings.json` when it exists but is not valid JSON.
+    private(set) var invalidUserSettingsPath: String?
     private(set) var isInstallingUpdate = false
     /// Nil for development builds without an app bundle.
     let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -117,6 +119,7 @@ final class AppModel {
             errorMessage = L("Hilfsprogramm \(KeyHelperCommand.executableName) wurde nicht gefunden. Bitte App neu installieren.")
             return
         }
+        invalidUserSettingsPath = ClaudeSettingsBinder.isUnparsableJSON(binder.userSettingsPath) ? binder.userSettingsPath : nil
         for profile in state.profiles {
             let result = helper.run("credential", profile.id)
             keyPresent[profile.id] = result.code != HelperExitCode.missingCredential.rawValue

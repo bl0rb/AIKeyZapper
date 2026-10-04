@@ -2,8 +2,10 @@
 " %lld Eintrag/Einträge übersprungen (Ordner fehlt, Konflikt oder nicht freigegebener Endpunkt)." = " %lld entry/entries skipped (folder missing, conflict or endpoint not allowed).";
 " · Modell %@" = " · model %@";
 "%@ (%@) setzen „%@“; die Projektzuordnung hat Vorrang." = "%@ (%@) set “%@”; the project assignment takes precedence.";
+"%@ (%@) sind kein gültiges JSON; Claude Code ignoriert die Datei." = "%@ (%@) are not valid JSON; Claude Code ignores the file.";
 "%@ (%@): „%@“ leitet Claude Code an LiteLLM vorbei." = "%@ (%@): “%@” routes Claude Code around LiteLLM.";
 "%@ ist im Git-Repository eingecheckt und würde geteilt." = "%@ is committed to the Git repository and would be shared.";
+"%@ ist kein gültiges JSON" = "%@ is not valid JSON";
 "%@ ist kein gültiges JSON." = "%@ is not valid JSON.";
 "%@ ist nicht lesbar" = "%@ is not readable";
 "%@ liegt in einem Git-Repository. Claude Code liest Projekteinstellungen nur aus %@." = "%@ is inside a Git repository. Claude Code reads project settings only from %@.";
@@ -35,6 +37,7 @@
 "Budget dieses Keys ist ausgeschöpft." = "This key's budget is exhausted.";
 "Claude Code" = "Claude Code";
 "Claude Code holt in jedem zugeordneten Projekt den passenden Key automatisch über den Helper – kein manuelles Wechseln nötig. Nach neuen Zuordnungen die Claude-Sitzung einmal neu starten." = "In every assigned project, Claude Code fetches the right key automatically via the helper – no manual switching. After new assignments, restart the Claude session once.";
+"Claude Code ignoriert die Datei, und das Speichern der Modellauswahl schlägt fehl. Fehler finden mit „python3 -m json.tool ~/.claude/settings.json“ oder die Datei löschen." = "Claude Code ignores the file, and saving the model choice fails. Find the error with “python3 -m json.tool ~/.claude/settings.json” or delete the file.";
 "Claude holt den Key selbst" = "Claude fetches the key itself";
 "Claude-Code-CLI veraltet: %@" = "Claude Code CLI outdated: %@";
 "Claude-Einstellungen sind nicht lesbar: %@" = "Claude settings are not readable: %@";

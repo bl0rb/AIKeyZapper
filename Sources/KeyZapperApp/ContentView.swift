@@ -83,6 +83,14 @@ struct ContentView: View {
             if let problem = model.backupProblem {
                 Banner(kind: .warning, title: problem)
             }
+            if let path = model.invalidUserSettingsPath {
+                Banner(kind: .warning,
+                       title: L("\((path as NSString).abbreviatingWithTildeInPath) ist kein gültiges JSON"),
+                       detail: L("Claude Code ignoriert die Datei, und das Speichern der Modellauswahl schlägt fehl. Fehler finden mit „python3 -m json.tool ~/.claude/settings.json“ oder die Datei löschen."),
+                       actions: [BannerAction(title: L("Im Finder zeigen")) {
+                           NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                       }])
+            }
             if !model.outdatedCLIs.isEmpty {
                 Banner(kind: .warning,
                        title: L("Claude-Code-CLI veraltet: \(model.outdatedCLIs.joined(separator: ", "))"),

@@ -205,4 +205,7 @@ EN = {
 "Haiku": "Haiku",
 "Verbindung erfolgreich, alle Modelle sind verfügbar.": "Connection successful, all models are available.",
 "Verbindung erfolgreich, aber diese Modelle sind für den Key nicht freigegeben: %@": "Connection successful, but these models are not enabled for the key: %@",
+"%@ (%@) sind kein gültiges JSON; Claude Code ignoriert die Datei.": "%@ (%@) are not valid JSON; Claude Code ignores the file.",
+"%@ ist kein gültiges JSON": "%@ is not valid JSON",
+"Claude Code ignoriert die Datei, und das Speichern der Modellauswahl schlägt fehl. Fehler finden mit „python3 -m json.tool ~/.claude/settings.json“ oder die Datei löschen.": "Claude Code ignores the file, and saving the model choice fails. Find the error with “python3 -m json.tool ~/.claude/settings.json” or delete the file.",
 }

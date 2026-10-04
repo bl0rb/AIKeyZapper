@@ -1,4 +1,5 @@
 import Foundation
+import JavaScriptCore
 
 public enum BindingHealth: Equatable, Sendable {
     case active
@@ -132,8 +133,13 @@ public struct ClaudeSettingsBinder {
     public func inspect(_ binding: WorkspaceBinding, profile: Profile) -> BindingStatus {
         guard Self.isDirectory(binding.path) else { return BindingStatus(health: .folderMissing, conflicts: []) }
         var conflicts = environmentConflicts(root: binding.path)
+        let localPath = Self.localSettingsURL(binding.path).path
         let settings: [String: Any]
-        do { settings = try Self.readJSON(Self.localSettingsURL(binding.path).path) ?? [:] } catch {
+        do {
+            // Strict check first: Claude Code ignores a file Foundation would still accept (e.g. trailing commas).
+            guard !Self.isUnparsableJSON(localPath) else { throw KeyZapperError.settingsUnreadable(localPath) }
+            settings = try Self.readJSON(localPath) ?? [:]
+        } catch {
             conflicts.append(SettingsConflict(.blocking, L("\(Self.localSettingsPath) ist kein gültiges JSON.")))
             return BindingStatus(health: .drifted([]), conflicts: conflicts)
         }
@@ -176,6 +182,11 @@ public struct ClaudeSettingsBinder {
                       (L("Lokale Projekteinstellungen"), Self.localSettingsURL(root).path)] +
                      managedSettingsPaths.map { (L("Verwaltete Firmeneinstellung"), $0) }
         for (name, path) in layers {
+            // User settings get one app-wide banner; invalid local settings are reported by inspect().
+            if path != userSettingsPath && path != Self.localSettingsURL(root).path && Self.isUnparsableJSON(path) {
+                result.append(SettingsConflict(.warning, L("\(name) (\(path)) sind kein gültiges JSON; Claude Code ignoriert die Datei.")))
+                continue
+            }
             guard let settings = try? Self.readJSON(path) else { continue }
             for key in Self.providerEnvKeys where Self.isTruthy(settings.stringValue(at: "env." + key)) {
                 result.append(SettingsConflict(.blocking, L("\(name) (\(path)): „\(key)“ leitet Claude Code an LiteLLM vorbei.")))
@@ -206,7 +217,8 @@ public struct ClaudeSettingsBinder {
             let before = try Self.canonicalJSON(settings)
             try transform(&settings)
             if let env = settings["env"] as? [String: Any], env.isEmpty { settings["env"] = nil }
-            if try Self.canonicalJSON(settings) == before { return false }
+            // Rewrite even without changes if Claude Code cannot parse the file as it is (e.g. trailing commas).
+            if try Self.canonicalJSON(settings) == before, original == nil || !Self.isUnparsableJSON(url.path) { return false }
 
             if settings.isEmpty {
                 guard (try? Self.readData(url)) == original else { continue }
@@ -245,6 +257,22 @@ public struct ClaudeSettingsBinder {
             throw KeyZapperError.settingsUnreadable(L("kein gültiges JSON-Objekt"))
         }
         return dict
+    }
+
+    /// True if the file exists but is not a JSON object for Claude Code. Checked with JavaScript's strict
+    /// `JSON.parse` like Claude Code itself: Foundation's parser accepts e.g. trailing commas that Claude rejects.
+    public static func isUnparsableJSON(_ path: String) -> Bool {
+        guard let data = FileManager.default.contents(atPath: path) else { return false }
+        let text = String(decoding: data, as: UTF8.self)
+        guard !text.allSatisfy(\.isWhitespace), let context = JSContext() else { return false }
+        context.setObject(text, forKeyedSubscript: "input" as NSString)
+        let verdict = context.evaluateScript("""
+            (function () {
+              try { var v = JSON.parse(input); return v !== null && typeof v === 'object' && !Array.isArray(v); }
+              catch (e) { return false; }
+            })()
+            """)
+        return verdict?.toBool() != true
     }
 
     static func readJSON(_ path: String) throws -> [String: Any]? {

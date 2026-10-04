@@ -160,3 +160,41 @@ struct GitIntegrationTests {
         #expect(throws: KeyZapperError.self) { try binder.apply(profile: sampleProfile, folder: repo, previous: nil) }
     }
 }
+
+struct InvalidSettingsTests {
+    @Test func reportsUnparsableProjectAndManagedSettingsButNotUserSettings() throws {
+        let root = makeTempDir("proj")
+        let user = makeTempDir("user") + "/settings.json"
+        let managed = makeTempDir("managed") + "/managed-settings.json"
+        try FileManager.default.createDirectory(atPath: root + "/.claude", withIntermediateDirectories: true)
+        for path in [root + "/.claude/settings.json", user, managed] {
+            try #"{ "env": { "A": "1", }, }"#.write(toFile: path, atomically: true, encoding: .utf8)
+        }
+        let binder = ClaudeSettingsBinder(helperPath: "/h", managedSettingsPaths: [managed], userSettingsPath: user)
+        let warnings = binder.environmentConflicts(root: root).filter { $0.severity == .warning }.map(\.message)
+        #expect(warnings.count == 2)
+        #expect(warnings.contains { $0.contains(root + "/.claude/settings.json") })
+        #expect(warnings.contains { $0.contains(managed) })
+        #expect(ClaudeSettingsBinder.isUnparsableJSON(user))
+        #expect(ClaudeSettingsBinder.isUnparsableJSON(root + "/missing.json") == false)
+        try "{}".write(toFile: user, atomically: true, encoding: .utf8)
+        #expect(ClaudeSettingsBinder.isUnparsableJSON(user) == false)
+    }
+}
+
+struct StrictLocalSettingsTests {
+    @Test func trailingCommaInLocalSettingsIsReportedAndRepairedByReapply() throws {
+        let root = makeTempDir("proj")
+        let binder = ClaudeSettingsBinder(helperPath: "/h", managedSettingsPaths: [], userSettingsPath: "/nonexistent")
+        let applied = try binder.apply(profile: sampleProfile, folder: root, previous: nil)
+        let path = root + "/.claude/settings.local.json"
+        let text = try String(contentsOfFile: path, encoding: .utf8)
+        try text.replacingOccurrences(of: "\n}\n", with: ",\n}\n").write(toFile: path, atomically: true, encoding: .utf8)
+        let broken = binder.inspect(applied.binding, profile: sampleProfile)
+        #expect(broken.health == .drifted([]))
+        #expect(broken.conflicts.contains { $0.severity == .blocking })
+        _ = try binder.apply(profile: sampleProfile, folder: root, previous: applied.binding)
+        #expect(ClaudeSettingsBinder.isUnparsableJSON(path) == false)
+        #expect(binder.inspect(applied.binding, profile: sampleProfile).health == .active)
+    }
+}

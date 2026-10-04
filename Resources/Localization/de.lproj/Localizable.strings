@@ -2,8 +2,10 @@
 " %lld Eintrag/Einträge übersprungen (Ordner fehlt, Konflikt oder nicht freigegebener Endpunkt)." = " %lld Eintrag/Einträge übersprungen (Ordner fehlt, Konflikt oder nicht freigegebener Endpunkt).";
 " · Modell %@" = " · Modell %@";
 "%@ (%@) setzen „%@“; die Projektzuordnung hat Vorrang." = "%@ (%@) setzen „%@“; die Projektzuordnung hat Vorrang.";
+"%@ (%@) sind kein gültiges JSON; Claude Code ignoriert die Datei." = "%@ (%@) sind kein gültiges JSON; Claude Code ignoriert die Datei.";
 "%@ (%@): „%@“ leitet Claude Code an LiteLLM vorbei." = "%@ (%@): „%@“ leitet Claude Code an LiteLLM vorbei.";
 "%@ ist im Git-Repository eingecheckt und würde geteilt." = "%@ ist im Git-Repository eingecheckt und würde geteilt.";
+"%@ ist kein gültiges JSON" = "%@ ist kein gültiges JSON";
 "%@ ist kein gültiges JSON." = "%@ ist kein gültiges JSON.";
 "%@ ist nicht lesbar" = "%@ ist nicht lesbar";
 "%@ liegt in einem Git-Repository. Claude Code liest Projekteinstellungen nur aus %@." = "%@ liegt in einem Git-Repository. Claude Code liest Projekteinstellungen nur aus %@.";
@@ -35,6 +37,7 @@
 "Budget dieses Keys ist ausgeschöpft." = "Budget dieses Keys ist ausgeschöpft.";
 "Claude Code" = "Claude Code";
 "Claude Code holt in jedem zugeordneten Projekt den passenden Key automatisch über den Helper – kein manuelles Wechseln nötig. Nach neuen Zuordnungen die Claude-Sitzung einmal neu starten." = "Claude Code holt in jedem zugeordneten Projekt den passenden Key automatisch über den Helper – kein manuelles Wechseln nötig. Nach neuen Zuordnungen die Claude-Sitzung einmal neu starten.";
+"Claude Code ignoriert die Datei, und das Speichern der Modellauswahl schlägt fehl. Fehler finden mit „python3 -m json.tool ~/.claude/settings.json“ oder die Datei löschen." = "Claude Code ignoriert die Datei, und das Speichern der Modellauswahl schlägt fehl. Fehler finden mit „python3 -m json.tool ~/.claude/settings.json“ oder die Datei löschen.";
 "Claude holt den Key selbst" = "Claude holt den Key selbst";
 "Claude-Code-CLI veraltet: %@" = "Claude-Code-CLI veraltet: %@";
 "Claude-Einstellungen sind nicht lesbar: %@" = "Claude-Einstellungen sind nicht lesbar: %@";
