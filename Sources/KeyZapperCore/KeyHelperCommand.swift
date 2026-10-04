@@ -40,21 +40,21 @@ public struct KeyHelperCommand {
 
     public func run(_ args: [String], stdin: () -> String) -> Output {
         guard args.count == 3, args[1] == "--profile", ["credential", "store", "status", "delete"].contains(args[0]) else {
-            return fail(.usage, "Aufruf: \(Self.executableName) credential|store|status|delete --profile <UUID>")
+            return fail(.usage, L("Aufruf: \(Self.executableName) credential|store|status|delete --profile <UUID>"))
         }
-        guard let id = UUID(uuidString: args[2]) else { return fail(.unknownProfile, "Ungültige Profil-ID: \(args[2])") }
+        guard let id = UUID(uuidString: args[2]) else { return fail(.unknownProfile, L("Ungültige Profil-ID: \(args[2])")) }
         let profile: Profile
         do {
             guard let p = try metadata.load().profile(id) else {
                 if args[0] == "delete" { return deleteOrphan(id) }
-                return fail(.unknownProfile, "Unbekanntes Profil: \(id.uuidString)")
+                return fail(.unknownProfile, L("Unbekanntes Profil: \(id.uuidString)"))
             }
             profile = p
         } catch {
             return fail(.configError, error.localizedDescription)
         }
         if ["credential", "store"].contains(args[0]) && !config.isEndpointAllowed(profile.endpoint) {
-            return fail(.configError, "Endpunkt \(profile.endpoint.host() ?? "?") ist laut Firmenrichtlinie (AllowedGatewayHosts) nicht freigegeben.")
+            return fail(.configError, L("Endpunkt \(profile.endpoint.host() ?? "?") ist laut Firmenrichtlinie (AllowedGatewayHosts) nicht freigegeben."))
         }
         do {
             switch args[0] {

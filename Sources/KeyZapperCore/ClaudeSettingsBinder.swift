@@ -132,7 +132,7 @@ public struct ClaudeSettingsBinder {
         var conflicts = environmentConflicts(root: binding.path)
         let settings: [String: Any]
         do { settings = try Self.readJSON(Self.localSettingsURL(binding.path).path) ?? [:] } catch {
-            conflicts.append(SettingsConflict(.blocking, "\(Self.localSettingsPath) ist kein gültiges JSON."))
+            conflicts.append(SettingsConflict(.blocking, L("\(Self.localSettingsPath) ist kein gültiges JSON.")))
             return BindingStatus(health: .drifted([]), conflicts: conflicts)
         }
         let desired = desiredValues(for: profile)
@@ -152,7 +152,7 @@ public struct ClaudeSettingsBinder {
             guard settings.hasValue(at: key) else { return nil }
             let current = settings.stringValue(at: key)
             if current == desired[key] || (current != nil && current == previous[key]) { return nil }
-            return SettingsConflict(.blocking, "\(localSettingsPath): „\(key)“ ist bereits mit einem anderen Wert gesetzt. Bitte manuell entfernen.")
+            return SettingsConflict(.blocking, L("\(localSettingsPath): „\(key)“ ist bereits mit einem anderen Wert gesetzt. Bitte manuell entfernen."))
         }
     }
 
@@ -162,24 +162,25 @@ public struct ClaudeSettingsBinder {
         for path in managedSettingsPaths {
             guard let managed = try? Self.readJSON(path) else { continue }
             for key in ["apiKeyHelper"] + Self.authEnvKeys.map({ "env." + $0 }) where managed.hasValue(at: key) {
-                result.append(SettingsConflict(.blocking, "Verwaltete Firmeneinstellung \(path) setzt „\(key)“ und hat Vorrang vor der Projektzuordnung."))
+                result.append(SettingsConflict(.blocking, L("Verwaltete Firmeneinstellung \(path) setzt „\(key)“ und hat Vorrang vor der Projektzuordnung.")))
             }
         }
         if Git.status(["ls-files", "--error-unmatch", Self.localSettingsPath], in: root) == 0 {
-            result.append(SettingsConflict(.blocking, "\(Self.localSettingsPath) ist im Git-Repository eingecheckt und würde geteilt."))
+            result.append(SettingsConflict(.blocking, L("\(Self.localSettingsPath) ist im Git-Repository eingecheckt und würde geteilt.")))
         }
-        let layers = [("Benutzereinstellungen", userSettingsPath),
-                      ("Projekteinstellungen", URL(fileURLWithPath: root).appendingPathComponent(".claude/settings.json").path),
-                      ("Lokale Projekteinstellungen", Self.localSettingsURL(root).path)] +
-                     managedSettingsPaths.map { ("Verwaltete Firmeneinstellung", $0) }
+        let projectSettingsPath = URL(fileURLWithPath: root).appendingPathComponent(".claude/settings.json").path
+        let layers = [(L("Benutzereinstellungen"), userSettingsPath),
+                      (L("Projekteinstellungen"), projectSettingsPath),
+                      (L("Lokale Projekteinstellungen"), Self.localSettingsURL(root).path)] +
+                     managedSettingsPaths.map { (L("Verwaltete Firmeneinstellung"), $0) }
         for (name, path) in layers {
             guard let settings = try? Self.readJSON(path) else { continue }
             for key in Self.providerEnvKeys where Self.isTruthy(settings.stringValue(at: "env." + key)) {
-                result.append(SettingsConflict(.blocking, "\(name) (\(path)): „\(key)“ leitet Claude Code an LiteLLM vorbei."))
+                result.append(SettingsConflict(.blocking, L("\(name) (\(path)): „\(key)“ leitet Claude Code an LiteLLM vorbei.")))
             }
-            if path == userSettingsPath || name == "Projekteinstellungen" {
+            if path == userSettingsPath || path == projectSettingsPath {
                 for key in ["apiKeyHelper"] + Self.authEnvKeys.map({ "env." + $0 }) where settings.hasValue(at: key) {
-                    result.append(SettingsConflict(.warning, "\(name) (\(path)) setzen „\(key)“; die Projektzuordnung hat Vorrang."))
+                    result.append(SettingsConflict(.warning, L("\(name) (\(path)) setzen „\(key)“; die Projektzuordnung hat Vorrang.")))
                 }
             }
         }
@@ -239,7 +240,7 @@ public struct ClaudeSettingsBinder {
     static func parse(_ data: Data) throws -> [String: Any] {
         if data.allSatisfy({ [0x20, 0x0A, 0x0D, 0x09].contains($0) }) { return [:] }
         guard let object = try? JSONSerialization.jsonObject(with: data), let dict = object as? [String: Any] else {
-            throw KeyZapperError.settingsUnreadable("kein gültiges JSON-Objekt")
+            throw KeyZapperError.settingsUnreadable(L("kein gültiges JSON-Objekt"))
         }
         return dict
     }

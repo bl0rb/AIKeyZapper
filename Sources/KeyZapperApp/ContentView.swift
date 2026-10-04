@@ -7,6 +7,7 @@ struct ContentView: View {
     @Environment(AppModel.self) private var model
     @ViewState private var showNewProfile = false
     @ViewState private var showAddProject = false
+    @ViewState private var showHowItWorks = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -18,14 +19,20 @@ struct ContentView: View {
                     Text("Lege ein Profil mit LiteLLM-Endpunkt, Modellalias und deinem freigegebenen Key an.")
                 } actions: {
                     Button("Profil anlegen") { showNewProfile = true }.buttonStyle(.borderedProminent)
+                    Button("So funktioniert’s") { showHowItWorks = true }.buttonStyle(.link)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         ForEach(model.state.profiles) { ProfileCard(profile: $0) }
-                        Text("Änderungen gelten für neu gestartete Claude-Sitzungen (VS Code: neue Unterhaltung bzw. Fenster neu laden; IntelliJ: Claude neu starten). Laufende Sitzungen übernehmen einen neuen Key nach Ablauf des Helper-Caches (Standard 5 min) oder nach einem 401.")
-                            .font(.caption).foregroundStyle(.secondary)
+                        HStack(spacing: 6) {
+                            Image(systemName: "bolt.horizontal.circle").foregroundStyle(Color.accentColor)
+                            Text("Claude Code holt in jedem zugeordneten Projekt den passenden Key automatisch über den Helper – kein manuelles Wechseln nötig. Nach neuen Zuordnungen die Claude-Sitzung einmal neu starten.")
+                                .foregroundStyle(.secondary)
+                            Button("So funktioniert’s") { showHowItWorks = true }.buttonStyle(.link)
+                        }
+                        .font(.caption)
                         VersionFooter()
                     }
                     .padding(20)
@@ -39,8 +46,10 @@ struct ContentView: View {
                 Button { showAddProject = true } label: { Label("Projekt zuordnen", systemImage: "folder.badge.plus") }
                     .disabled(model.state.profiles.isEmpty)
                 Button { model.refresh() } label: { Label("Status aktualisieren", systemImage: "arrow.clockwise") }
+                Button { showHowItWorks = true } label: { Label("So funktioniert’s", systemImage: "info.circle") }
             }
         }
+        .sheet(isPresented: $showHowItWorks) { HowItWorksView() }
         .sheet(isPresented: $showNewProfile) { ProfileEditor(existing: nil) }
         .sheet(isPresented: $showAddProject) { AddProjectSheet() }
         .alert("Fehler", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
@@ -54,25 +63,25 @@ struct ContentView: View {
         VStack(spacing: 0) {
             if let backup = model.availableBackup {
                 Banner(kind: .info,
-                       title: "OneDrive-Backup gefunden: \(backup.profiles.count) Profil(e), \(backup.bindings.count) Projekt(e)",
-                       detail: "Profile und Zuordnungen wiederherstellen? Keys sind nicht im Backup und müssen neu eingetragen werden.",
-                       actions: [BannerAction(title: "Wiederherstellen", action: model.restoreFromBackup),
-                                 BannerAction(title: "Verwerfen", action: model.discardBackup)])
+                       title: L("OneDrive-Backup gefunden: \(backup.profiles.count) Profil(e), \(backup.bindings.count) Projekt(e)"),
+                       detail: L("Profile und Zuordnungen wiederherstellen? Keys sind nicht im Backup und müssen neu eingetragen werden."),
+                       actions: [BannerAction(title: L("Wiederherstellen"), action: model.restoreFromBackup),
+                                 BannerAction(title: L("Verwerfen"), action: model.discardBackup)])
             }
             if let problem = model.backupProblem {
                 Banner(kind: .warning, title: problem)
             }
             if !model.outdatedCLIs.isEmpty {
                 Banner(kind: .warning,
-                       title: "Claude-Code-CLI veraltet: \(model.outdatedCLIs.joined(separator: ", "))",
-                       detail: "IntelliJ nutzt diese CLI. Unter \(model.minimumCLIVersion) gilt die Projektzuordnung nur beim Start direkt im Projektordner. Aktualisieren mit „claude update“.")
+                       title: L("Claude-Code-CLI veraltet: \(model.outdatedCLIs.joined(separator: ", "))"),
+                       detail: L("IntelliJ nutzt diese CLI. Unter \(model.minimumCLIVersion) gilt die Projektzuordnung nur beim Start direkt im Projektordner. Aktualisieren mit „claude update“."))
             }
             if let update = model.availableUpdate {
                 Banner(kind: .info,
-                       title: "KeyZapper \(update.version) ist verfügbar (installiert: \(model.appVersion ?? "?"))",
-                       detail: model.isInstallingUpdate ? "Paket wird geladen und geprüft …" : "Die Installation benötigt Administratorrechte.",
-                       actions: [BannerAction(title: "Installieren") { Task { await model.installUpdate() } },
-                                 BannerAction(title: "Versionshinweise") { NSWorkspace.shared.open(update.pageURL) }])
+                       title: L("KeyZapper \(update.version) ist verfügbar (installiert: \(model.appVersion ?? "?"))"),
+                       detail: model.isInstallingUpdate ? L("Paket wird geladen und geprüft …") : L("Die Installation benötigt Administratorrechte."),
+                       actions: [BannerAction(title: L("Installieren")) { Task { await model.installUpdate() } },
+                                 BannerAction(title: L("Versionshinweise")) { NSWorkspace.shared.open(update.pageURL) }])
             }
             if let notice = model.notice {
                 Banner(kind: .info, title: notice) { model.notice = nil }
@@ -108,7 +117,7 @@ struct ProfileCard: View {
                                     .background(Capsule().stroke(.secondary.opacity(0.4)))
                             }
                         }
-                        Text(profile.endpoint.absoluteString + (profile.modelAlias.isEmpty ? "" : " · Modell \(profile.modelAlias)"))
+                        Text(profile.endpoint.absoluteString + (profile.modelAlias.isEmpty ? "" : L(" · Modell \(profile.modelAlias)")))
                             .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                     }
                     Spacer()
@@ -117,15 +126,10 @@ struct ProfileCard: View {
                 }
 
                 HStack {
-                    if hasKey {
-                        Label("Key \(model.keyHints[profile.id] ?? "hinterlegt")", systemImage: "key.fill")
-                            .foregroundStyle(.green).monospaced()
-                    } else {
-                        Label("Kein Key hinterlegt – Anfragen schlagen fehl", systemImage: "key.slash").foregroundStyle(.red)
-                    }
+                    keyChip
                     Spacer()
                     Button("Kopieren", systemImage: "doc.on.doc") { model.copyKey(profile) }.disabled(!hasKey)
-                    Button(hasKey ? "Ändern" : "Key hinterlegen", systemImage: "pencil") { replacingKey = true }
+                    Button(hasKey ? LocalizedStringKey("Ändern") : LocalizedStringKey("Key hinterlegen"), systemImage: "pencil") { replacingKey = true }
                     Button("Verbindung prüfen") {
                         checking = true
                         checkResult = nil
@@ -143,17 +147,7 @@ struct ProfileCard: View {
                         .foregroundStyle(ok ? .green : .orange)
                 }
 
-                Divider()
-                HStack {
-                    Text("Projekte").font(.headline)
-                    Spacer()
-                    Button("Projekt zuordnen …", systemImage: "folder.badge.plus") { addingProject = true }
-                }
-                if bindings.isEmpty {
-                    Text("Noch keinem Projekt zugeordnet.").foregroundStyle(.secondary)
-                } else {
-                    ForEach(bindings) { ProjectRow(binding: $0) }
-                }
+                assignedProjects
             }
             .padding(8)
         }
@@ -163,11 +157,69 @@ struct ProfileCard: View {
         .confirmationDialog("Profil „\(profile.name)“ löschen?", isPresented: $confirmDelete) {
             Button("Löschen", role: .destructive) { model.deleteProfile(profile) }
         } message: {
-            Text(bindings.isEmpty
-                 ? "Der Key wird aus dem Schlüsselbund entfernt."
-                 : "Der Key wird aus dem Schlüsselbund entfernt und \(bindings.count) Projektzuordnung(en) werden zurückgenommen.")
+            if bindings.isEmpty {
+                Text("Der Key wird aus dem Schlüsselbund entfernt.")
+            } else {
+                Text("Der Key wird aus dem Schlüsselbund entfernt und \(bindings.count) Projektzuordnung(en) werden zurückgenommen.")
+            }
         }
         .onChange(of: profile) { checkResult = nil }
+    }
+
+    private var keyColor: Color { hasKey ? .green : .red }
+
+    /// The key as a framed chip, so it reads as the thing the projects below are assigned to.
+    private var keyChip: some View {
+        HStack(spacing: 6) {
+            Image(systemName: hasKey ? "key.fill" : "key.slash").foregroundStyle(keyColor)
+            if hasKey {
+                Text(verbatim: "Key \(model.keyHints[profile.id] ?? "••••")").monospaced()
+            } else {
+                Text("Kein Key hinterlegt – Anfragen schlagen fehl")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 6).fill(keyColor.opacity(0.10)))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(keyColor.opacity(0.45)))
+    }
+
+    /// Projects hang off the key: indented, joined by a connector line in the key's color, in their own panel.
+    private var assignedProjects: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label {
+                    if bindings.isEmpty {
+                        Text("Noch keinem Projekt zugeordnet")
+                    } else if bindings.count == 1 {
+                        Text("Nutzen diesen Key · 1 Projekt")
+                    } else {
+                        Text("Nutzen diesen Key · \(bindings.count) Projekte")
+                    }
+                } icon: {
+                    Image(systemName: "arrow.turn.down.right")
+                }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Projekt zuordnen …", systemImage: "folder.badge.plus") { addingProject = true }
+            }
+            if !bindings.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(Array(bindings.enumerated()), id: \.element.id) { index, binding in
+                        if index > 0 { Divider() }
+                        ProjectRow(binding: binding).padding(.horizontal, 12)
+                    }
+                }
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.2)))
+            }
+        }
+        .padding(.leading, 28)
+        .overlay(alignment: .leading) {
+            // Starts right under the key icon of the chip above.
+            Rectangle().fill(keyColor.opacity(0.45)).frame(width: 2).padding(.leading, 16).padding(.top, -12).padding(.bottom, 2)
+        }
     }
 }
 
@@ -185,7 +237,7 @@ struct ProjectRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(AppModel.folderName(binding.path)).fontWeight(.medium)
                     Text((binding.path as NSString).abbreviatingWithTildeInPath)
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                        .font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                 }
                 Spacer()
                 Picker("Profil", selection: Binding(get: { binding.profileID }, set: { model.bind(folder: binding.path, to: $0) })) {
@@ -224,13 +276,13 @@ struct ProjectRow: View {
     }
 
     static func describe(_ health: BindingHealth?, keyPresent: Bool) -> String {
-        if !keyPresent && health == .active { return "Für das Profil ist kein Key hinterlegt – Claude-Anfragen schlagen fehl." }
+        if !keyPresent && health == .active { return L("Für das Profil ist kein Key hinterlegt – Claude-Anfragen schlagen fehl.") }
         switch health {
-        case .active: return "Aktiv"
-        case .notApplied: return "Nicht eingerichtet – „Erneut anwenden“ wählen."
-        case .drifted(let keys): return "Abweichung in \(keys.joined(separator: ", ")) – „Erneut anwenden“ wählen."
-        case .folderMissing: return "Ordner nicht gefunden (verschoben oder gelöscht). Zuordnung entfernen und neu zuordnen."
-        case nil: return "Status unbekannt"
+        case .active: return L("Aktiv")
+        case .notApplied: return L("Nicht eingerichtet – „Erneut anwenden“ wählen.")
+        case .drifted(let keys): return L("Abweichung in \(keys.joined(separator: ", ")) – „Erneut anwenden“ wählen.")
+        case .folderMissing: return L("Ordner nicht gefunden (verschoben oder gelöscht). Zuordnung entfernen und neu zuordnen.")
+        case nil: return L("Status unbekannt")
         }
     }
 }
@@ -240,7 +292,11 @@ struct VersionFooter: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Text("KeyZapper \(model.appVersion ?? "Entwicklungsversion")").foregroundStyle(.secondary)
+            if let version = model.appVersion {
+                Text(verbatim: "KeyZapper \(version)").foregroundStyle(.secondary)
+            } else {
+                Text("KeyZapper Entwicklungsversion").foregroundStyle(.secondary)
+            }
             if model.config.updateCheckEnabled {
                 Button("Nach Updates suchen") { Task { await model.checkForUpdates(userInitiated: true) } }
                     .buttonStyle(.link)

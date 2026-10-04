@@ -40,7 +40,11 @@ struct ProfileEditor: View {
             }
             .disabled(isManaged)
             Section {
-                SecureField(existing == nil ? "Key" : "Neuer Key", text: $key, prompt: Text(existing == nil ? "sk-…" : "leer lassen, um den Key zu behalten"))
+                if existing == nil {
+                    SecureField("Key", text: $key, prompt: Text(verbatim: "sk-…"))
+                } else {
+                    SecureField("Neuer Key", text: $key, prompt: Text("leer lassen, um den Key zu behalten"))
+                }
             } footer: {
                 Text("Der Key wird ausschließlich im macOS-Schlüsselbund gespeichert.").font(.caption).foregroundStyle(.secondary)
             }
@@ -50,7 +54,7 @@ struct ProfileEditor: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }
             ToolbarItem(placement: .confirmationAction) {
-                Button(existing == nil ? "Anlegen" : "Sichern") {
+                Button(existing == nil ? LocalizedStringKey("Anlegen") : LocalizedStringKey("Sichern")) {
                     guard let url = endpointURL else { return }
                     var profile = existing ?? Profile(name: name, endpoint: url, modelAlias: modelAlias)
                     profile.name = name.trimmingCharacters(in: .whitespaces)

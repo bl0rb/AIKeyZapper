@@ -12,14 +12,14 @@ public enum GatewayCheckResult: Equatable, Sendable {
     public var message: String {
         switch self {
         case .ok(let modelAvailable):
-            modelAvailable == nil ? "Verbindung erfolgreich."
-                : modelAvailable == true ? "Verbindung erfolgreich, Modellalias ist verfügbar."
-                : "Verbindung erfolgreich, aber der Modellalias ist für diesen Key nicht freigegeben."
-        case .unauthorized: "Key wird vom Gateway abgelehnt (ungültig oder gesperrt)."
-        case .rateLimited: "Rate-Limit erreicht. Später erneut versuchen."
-        case .budgetExceeded: "Budget dieses Keys ist ausgeschöpft."
-        case .unreachable(let reason): "Gateway nicht erreichbar (VPN?): \(reason)"
-        case .httpError(let code): "Unerwartete Antwort vom Gateway (HTTP \(code))."
+            modelAvailable == nil ? L("Verbindung erfolgreich.")
+                : modelAvailable == true ? L("Verbindung erfolgreich, Modellalias ist verfügbar.")
+                : L("Verbindung erfolgreich, aber der Modellalias ist für diesen Key nicht freigegeben.")
+        case .unauthorized: L("Key wird vom Gateway abgelehnt (ungültig oder gesperrt).")
+        case .rateLimited: L("Rate-Limit erreicht. Später erneut versuchen.")
+        case .budgetExceeded: L("Budget dieses Keys ist ausgeschöpft.")
+        case .unreachable(let reason): L("Gateway nicht erreichbar (VPN?): \(reason)")
+        case .httpError(let code): L("Unerwartete Antwort vom Gateway (HTTP \(String(code))).")
         }
     }
 }

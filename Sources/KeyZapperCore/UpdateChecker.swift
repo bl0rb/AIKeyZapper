@@ -79,9 +79,9 @@ public enum UpdateError: Error, Equatable, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .unavailable(let status): "Update-Server nicht erreichbar (HTTP \(status))."
-        case .noPackage: "Das Release enthält kein Installationspaket."
-        case .checksumMismatch: "Prüfsumme des heruntergeladenen Pakets stimmt nicht. Installation abgebrochen."
+        case .unavailable(let status): L("Update-Server nicht erreichbar (HTTP \(String(status))).")
+        case .noPackage: L("Das Release enthält kein Installationspaket.")
+        case .checksumMismatch: L("Prüfsumme des heruntergeladenen Pakets stimmt nicht. Installation abgebrochen.")
         }
     }
 }

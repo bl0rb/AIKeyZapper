@@ -21,7 +21,7 @@ public struct MetadataStore: Sendable {
     public func load() throws -> AppState {
         guard let data = try? Data(contentsOf: fileURL) else {
             if FileManager.default.fileExists(atPath: fileURL.path) {
-                throw KeyZapperError.corruptMetadata("\(fileURL.path) ist nicht lesbar")
+                throw KeyZapperError.corruptMetadata(L("\(fileURL.path) ist nicht lesbar"))
             }
             return AppState()
         }
@@ -44,7 +44,7 @@ public struct MetadataStore: Sendable {
         struct Header: Decodable { var schemaVersion: Int }
         let version: Int
         do { version = try JSONDecoder().decode(Header.self, from: data).schemaVersion } catch {
-            throw KeyZapperError.corruptMetadata("schemaVersion fehlt")
+            throw KeyZapperError.corruptMetadata(L("schemaVersion fehlt"))
         }
         guard version <= AppState.currentSchemaVersion else { throw KeyZapperError.unsupportedSchemaVersion(version) }
         switch version {

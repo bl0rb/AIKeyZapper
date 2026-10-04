@@ -17,7 +17,10 @@ struct AddProjectSheet: View {
             Section {
                 LabeledContent("Projektordner") {
                     HStack {
-                        Text(folder ?? "Kein Ordner gewählt").foregroundStyle(folder == nil ? .secondary : .primary).lineLimit(1).truncationMode(.middle)
+                        Group {
+                            if let folder { Text(verbatim: folder) } else { Text("Kein Ordner gewählt").foregroundStyle(.secondary) }
+                        }
+                        .lineLimit(1).truncationMode(.middle)
                         Button("Auswählen …") { pickingFolder = true }
                     }
                 }

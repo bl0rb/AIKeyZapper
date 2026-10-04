@@ -80,7 +80,7 @@ final class AppModel {
                     availableBackup = backup
                 }
             } else {
-                backupProblem = "OneDrive-Backup ist aktiviert, aber es wurde kein OneDrive-Ordner gefunden. Bitte in OneDrive anmelden."
+                backupProblem = L("OneDrive-Backup ist aktiviert, aber es wurde kein OneDrive-Ordner gefunden. Bitte in OneDrive anmelden.")
             }
         }
         syncManagedProfiles()
@@ -93,7 +93,7 @@ final class AppModel {
         }
     }
 
-    func profileName(_ id: UUID) -> String { state.profile(id)?.name ?? "Unbekanntes Profil" }
+    func profileName(_ id: UUID) -> String { state.profile(id)?.name ?? L("Unbekanntes Profil") }
 
     func isManaged(_ id: UUID) -> Bool { config.profiles.contains { $0.id == id } }
 
@@ -110,7 +110,7 @@ final class AppModel {
 
     func refresh() {
         guard let helper, let binder else {
-            errorMessage = "Hilfsprogramm \(KeyHelperCommand.executableName) wurde nicht gefunden. Bitte App neu installieren."
+            errorMessage = L("Hilfsprogramm \(KeyHelperCommand.executableName) wurde nicht gefunden. Bitte App neu installieren.")
             return
         }
         for profile in state.profiles {
@@ -128,7 +128,7 @@ final class AppModel {
     @discardableResult
     func saveProfile(_ profile: Profile, newKey: String?) -> Bool {
         guard config.isEndpointAllowed(profile.endpoint) else {
-            errorMessage = "Der Endpunkt \(profile.endpoint.host() ?? "") ist laut Firmenrichtlinie nicht freigegeben. Erlaubt: \(config.allowedGatewayHosts.joined(separator: ", "))"
+            errorMessage = L("Der Endpunkt \(profile.endpoint.host() ?? "") ist laut Firmenrichtlinie nicht freigegeben. Erlaubt: \(config.allowedGatewayHosts.joined(separator: ", "))")
             return false
         }
         let old = state.profile(profile.id)
@@ -146,7 +146,7 @@ final class AppModel {
         guard let helper else { return }
         let result = helper.run("store", profile.id, stdin: key)
         if result.code == HelperExitCode.ok.rawValue {
-            notice = "Key für „\(profile.name)“ gespeichert. Neue Claude-Sitzungen verwenden ihn sofort, laufende nach Ablauf des Helper-Caches (Standard 5 min), nach einem 401 oder nach Neustart."
+            notice = L("Key für „\(profile.name)“ gespeichert. Neue Claude-Sitzungen verwenden ihn sofort, laufende nach Ablauf des Helper-Caches (Standard 5 min), nach einem 401 oder nach Neustart.")
         } else {
             errorMessage = result.message
         }
@@ -177,7 +177,7 @@ final class AppModel {
         pasteboard.setString(result.stdout, forType: .string)
         pasteboard.setString("", forType: concealed)
         let changeCount = pasteboard.changeCount
-        notice = "Key von „\(profile.name)“ kopiert. Er wird nach 60 Sekunden aus der Zwischenablage entfernt."
+        notice = L("Key von „\(profile.name)“ kopiert. Er wird nach 60 Sekunden aus der Zwischenablage entfernt.")
         Task {
             try? await Task.sleep(for: .seconds(60))
             if NSPasteboard.general.changeCount == changeCount { NSPasteboard.general.clearContents() }
@@ -188,11 +188,11 @@ final class AppModel {
 
     func checkForUpdates(userInitiated: Bool) async {
         guard config.updateCheckEnabled else {
-            if userInitiated { notice = "Updates werden von der IT verteilt; die Update-Prüfung ist abgeschaltet." }
+            if userInitiated { notice = L("Updates werden von der IT verteilt; die Update-Prüfung ist abgeschaltet.") }
             return
         }
         guard let appVersion else {
-            if userInitiated { notice = "Entwicklungsversion – keine Update-Prüfung." }
+            if userInitiated { notice = L("Entwicklungsversion – keine Update-Prüfung.") }
             return
         }
         do {
@@ -200,10 +200,10 @@ final class AppModel {
             if UpdateChecker.isNewer(release.version, than: appVersion) {
                 availableUpdate = release
             } else if userInitiated {
-                notice = "KeyZapper \(appVersion) ist aktuell."
+                notice = L("KeyZapper \(appVersion) ist aktuell.")
             }
         } catch {
-            if userInitiated { errorMessage = "Update-Prüfung fehlgeschlagen: \(error.localizedDescription)" }
+            if userInitiated { errorMessage = L("Update-Prüfung fehlgeschlagen: \(error.localizedDescription)") }
         }
     }
 
@@ -215,10 +215,10 @@ final class AppModel {
         do {
             let package = try await UpdateChecker.downloadPackage(release)
             NSWorkspace.shared.open(package)
-            notice = "Installer für KeyZapper \(release.version) geöffnet. Nach der Installation KeyZapper neu starten."
+            notice = L("Installer für KeyZapper \(release.version) geöffnet. Nach der Installation KeyZapper neu starten.")
             availableUpdate = nil
         } catch {
-            errorMessage = "Update konnte nicht geladen werden: \(error.localizedDescription)"
+            errorMessage = L("Update konnte nicht geladen werden: \(error.localizedDescription)")
         }
     }
 
@@ -253,8 +253,8 @@ final class AppModel {
             statuses[binding.id] = nil
             persist()
             notice = kept.isEmpty
-                ? "Zuordnung für „\(Self.folderName(binding.path))“ entfernt. Laufende Claude-Sitzungen dort bitte neu starten."
-                : "Zuordnung entfernt. Außerhalb der App geänderte Einträge wurden beibehalten: \(kept.joined(separator: ", "))"
+                ? L("Zuordnung für „\(Self.folderName(binding.path))“ entfernt. Laufende Claude-Sitzungen dort bitte neu starten.")
+                : L("Zuordnung entfernt. Außerhalb der App geänderte Einträge wurden beibehalten: \(kept.joined(separator: ", "))")
             return true
         } catch {
             errorMessage = error.localizedDescription
@@ -270,8 +270,8 @@ final class AppModel {
             if let i = state.bindings.firstIndex(where: { $0.id == result.binding.id }) { state.bindings[i] = result.binding } else { state.bindings.append(result.binding) }
             persist()
             notice = result.changed
-                ? "„\(Self.folderName(folder))“ verwendet jetzt Profil „\(profile.name)“. Laufende Claude-Sitzungen in diesem Projekt bitte neu starten."
-                : "„\(Self.folderName(folder))“ ist bereits eingerichtet – keine Änderungen."
+                ? L("„\(Self.folderName(folder))“ verwendet jetzt Profil „\(profile.name)“. Laufende Claude-Sitzungen in diesem Projekt bitte neu starten.")
+                : L("„\(Self.folderName(folder))“ ist bereits eingerichtet – keine Änderungen.")
             return true
         } catch {
             errorMessage = error.localizedDescription
@@ -282,7 +282,7 @@ final class AppModel {
     @discardableResult
     private func persist() -> Bool {
         guard !metadataUnreadable else {
-            errorMessage = "Metadaten konnten nicht gelesen werden; Änderungen werden nicht gespeichert."
+            errorMessage = L("Metadaten konnten nicht gelesen werden; Änderungen werden nicht gespeichert.")
             return false
         }
         do { try metadata.save(state) } catch {
@@ -301,7 +301,7 @@ final class AppModel {
             try BackupStore(directory: backupDirectory).write(state)
             backupProblem = nil
         } catch {
-            backupProblem = "OneDrive-Backup fehlgeschlagen: \(error.localizedDescription)"
+            backupProblem = L("OneDrive-Backup fehlgeschlagen: \(error.localizedDescription)")
         }
     }
 
@@ -318,9 +318,9 @@ final class AppModel {
         }
         let skipped = backup.bindings.count - restored
         refresh()
-        notice = "Backup wiederhergestellt: \(backup.profiles.count) Profil(e), \(restored) Projekt(e)"
-            + (skipped > 0 ? ", \(skipped) übersprungen (Ordner fehlt oder Konflikt)" : "")
-            + ". Keys werden nicht gesichert – bitte je Profil neu eintragen."
+        notice = L("Backup wiederhergestellt: \(backup.profiles.count) Profil(e), \(restored) Projekt(e)")
+            + (skipped > 0 ? L(", \(skipped) übersprungen (Ordner fehlt oder Konflikt)") : "")
+            + L(". Keys werden nicht gesichert – bitte je Profil neu eintragen.")
     }
 
     func discardBackup() {

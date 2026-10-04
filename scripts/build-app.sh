@@ -16,6 +16,7 @@ APP=dist/KeyZapper.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/"
+cp -R Resources/Localization/*.lproj "$APP/Contents/Resources/"
 cp "$BIN/KeyZapper" "$APP/Contents/MacOS/"
 cp "$BIN/keyzapper-helper" "$APP/Contents/Helpers/"
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -26,6 +27,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>KeyZapper</string>
   <key>CFBundleExecutable</key><string>KeyZapper</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key><array><string>en</string><string>de</string></array>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$VERSION</string>
