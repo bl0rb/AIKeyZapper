@@ -323,6 +323,81 @@ final class AppModel {
             + L(". Keys werden nicht gesichert – bitte je Profil neu eintragen.")
     }
 
+    // MARK: Encrypted backup file (keys and settings)
+
+    enum BackupSheet: String, Identifiable {
+        case export, `import`
+        var id: String { rawValue }
+    }
+
+    var backupSheet: BackupSheet?
+
+    /// Writes profiles, assignments and (unless IT forbids it) the keys into a password-encrypted `.kzbackup` file.
+    func exportBackup(password: String, to url: URL) async -> Bool {
+        guard let helper else { return false }
+        var keys: [String: String] = [:]
+        if config.allowKeyExport {
+            for profile in state.profiles {
+                let result = helper.run("credential", profile.id)
+                if result.code == HelperExitCode.ok.rawValue { keys[profile.id.uuidString] = result.stdout }
+            }
+        }
+        let payload = BackupPayload(appVersion: appVersion, state: state, keys: keys)
+        do {
+            let data = try await Task.detached { try EncryptedBackup.seal(payload, password: password) }.value
+            try data.write(to: url, options: .atomic)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            let profileCount = state.profiles.count, keyCount = keys.count, projectCount = state.bindings.count
+            notice = L("Verschlüsseltes Backup gespeichert: \(profileCount) Profil(e), \(keyCount) Key(s), \(projectCount) Projekt(e).")
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Restores profiles and keys from an encrypted backup and re-assigns projects whose folders exist on this Mac.
+    func importBackup(from url: URL, password: String) async -> Bool {
+        guard let helper else { return false }
+        let payload: BackupPayload
+        do {
+            let data = try Data(contentsOf: url)
+            payload = try await Task.detached { try EncryptedBackup.open(data, password: password) }.value
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+        var skippedCount = 0
+        for profile in payload.state.profiles {
+            guard config.isEndpointAllowed(profile.endpoint) else { skippedCount += 1; continue }
+            if let i = state.profiles.firstIndex(where: { $0.id == profile.id }) {
+                if !isManaged(profile.id) { state.profiles[i] = profile }
+            } else {
+                state.profiles.append(profile)
+            }
+        }
+        guard persist() else { return false }
+        var keyCount = 0
+        for (id, key) in payload.keys {
+            guard let uuid = UUID(uuidString: id), state.profile(uuid) != nil else { continue }
+            if helper.run("store", uuid, stdin: key).code == HelperExitCode.ok.rawValue { keyCount += 1 }
+        }
+        var projectCount = 0
+        for binding in payload.state.bindings {
+            guard let profile = state.profile(binding.profileID), FileManager.default.fileExists(atPath: binding.path) else {
+                skippedCount += 1
+                continue
+            }
+            let previous = state.bindings.first { $0.path == binding.path } ?? binding
+            if apply(profile, folder: binding.path, previous: previous) { projectCount += 1 } else { skippedCount += 1 }
+        }
+        refresh()
+        let profileCount = payload.state.profiles.count
+        notice = L("Backup importiert: \(profileCount) Profil(e), \(keyCount) Key(s), \(projectCount) Projekt(e).")
+            + (skippedCount > 0 ? L(" \(skippedCount) Eintrag/Einträge übersprungen (Ordner fehlt, Konflikt oder nicht freigegebener Endpunkt).") : "")
+        return true
+    }
+
     func discardBackup() {
         availableBackup = nil
         writeBackup()

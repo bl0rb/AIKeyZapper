@@ -10,7 +10,8 @@ CALLS = r'(?<![\w.])(?:Text|Button|Label|LabeledContent|TextField|SecureField|Pi
         r'LocalizedStringKey|ContentUnavailableView|L)\(\s*' \
         r'|(?<![\w.])(?:step\(\d+,|hint\("[^"]*",|node\("[^"]*",)\s*' \
         r'|\.(?:help|alert|confirmationDialog|navigationTitle)\(\s*'
-INT_EXPRS = {"backup.profiles.count", "backup.bindings.count", "bindings.count", "restored", "skipped"}
+INT_EXPRS = {"backup.profiles.count", "backup.bindings.count", "bindings.count", "restored", "skipped",
+             "EncryptedBackup.minimumPasswordLength", "profileCount", "keyCount", "projectCount", "skippedCount"}
 
 def literal(src, i):
     """Parses a Swift string literal starting at src[i] == '"'. Returns (key, end index)."""

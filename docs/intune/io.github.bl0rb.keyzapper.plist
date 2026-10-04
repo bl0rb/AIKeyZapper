@@ -24,3 +24,5 @@
 <true/>
 <key>UpdateCheckEnabled</key>
 <false/>
+<key>AllowKeyExport</key>
+<true/>

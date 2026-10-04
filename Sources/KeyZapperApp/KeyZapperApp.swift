@@ -18,6 +18,10 @@ struct KeyZapperApp: App {
                 }
         }
         .commands {
+            CommandGroup(replacing: .importExport) {
+                Button("Backup exportieren …") { model.backupSheet = .export }.disabled(model.state.profiles.isEmpty)
+                Button("Backup importieren …") { model.backupSheet = .import }
+            }
             CommandGroup(after: .appInfo) {
                 Button("Nach Updates suchen …") { Task { await model.checkForUpdates(userInitiated: true) } }
                     .disabled(!model.config.updateCheckEnabled)

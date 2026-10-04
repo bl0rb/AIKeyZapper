@@ -11,7 +11,7 @@ public struct ReleaseInfo: Equatable, Sendable {
 
 /// Checks the public GitHub releases of KeyZapper and downloads the `.pkg` of a newer release.
 public enum UpdateChecker {
-    public static let repository = "bl0rb/AIKeyZapper"
+    public static let repository = "bl0rb/ClaudeKeyZapper"
     public static var latestReleaseURL: URL { URL(string: "https://api.github.com/repos/\(repository)/releases/latest")! }
 
     public static func latestRelease(session: URLSession = .shared) async throws -> ReleaseInfo {

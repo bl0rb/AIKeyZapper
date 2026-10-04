@@ -5,10 +5,10 @@ import Testing
 
 struct UpdateCheckerTests {
     static let releaseJSON = """
-    {"tag_name": "1.2.0", "html_url": "https://github.com/bl0rb/AIKeyZapper/releases/tag/1.2.0",
+    {"tag_name": "1.2.0", "html_url": "https://github.com/bl0rb/ClaudeKeyZapper/releases/tag/1.2.0",
      "assets": [
-       {"name": "notes.txt", "browser_download_url": "https://github.com/bl0rb/AIKeyZapper/releases/download/1.2.0/notes.txt"},
-       {"name": "KeyZapper-1.2.0.pkg", "browser_download_url": "https://github.com/bl0rb/AIKeyZapper/releases/download/1.2.0/KeyZapper-1.2.0.pkg",
+       {"name": "notes.txt", "browser_download_url": "https://github.com/bl0rb/ClaudeKeyZapper/releases/download/1.2.0/notes.txt"},
+       {"name": "KeyZapper-1.2.0.pkg", "browser_download_url": "https://github.com/bl0rb/ClaudeKeyZapper/releases/download/1.2.0/KeyZapper-1.2.0.pkg",
         "digest": "sha256:ABCDEF"}]}
     """
 
@@ -20,7 +20,7 @@ struct UpdateCheckerTests {
     }
 
     @Test func ignoresPackagesNotServedByGitHub() throws {
-        let json = Self.releaseJSON.replacingOccurrences(of: "https://github.com/bl0rb/AIKeyZapper/releases/download/1.2.0/KeyZapper", with: "https://evil.example/KeyZapper")
+        let json = Self.releaseJSON.replacingOccurrences(of: "https://github.com/bl0rb/ClaudeKeyZapper/releases/download/1.2.0/KeyZapper", with: "https://evil.example/KeyZapper")
         let release = try UpdateChecker.parse(Data(json.utf8))
         #expect(release.packageURL == nil)
     }

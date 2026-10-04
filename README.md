@@ -31,6 +31,7 @@ Claude Code ──apiKeyHelper──▶ keyzapper-helper ──▶ macOS Keychai
 * Overview with all profiles, masked keys and assigned projects. Everything can be changed directly; keys can be copied and replaced.
 * Update check against the GitHub releases with one-click installation; the version is shown in the app and under “About KeyZapper”.
 * UI in English and German (follows the macOS system language).
+* Encrypted backup and restore of profiles, assignments and keys (`.kzbackup`, password-protected).
 * Manageable via Intune: predefined profiles, gateway allowlist, defaults, minimum CLI version, OneDrive backup, update check.
 
 ## Requirements
@@ -133,6 +134,7 @@ key-value pairs without the `<plist>`/`<dict>` wrapper, as Intune requires.
 | `OneDriveBackup` | Bool | Backup of profiles and assignments to OneDrive (see below) |
 | `BackupDirectory` | String, `~` allowed | Explicit backup folder; enables the backup even without `OneDriveBackup` |
 | `UpdateCheckEnabled` | Bool (default `true`) | In-app update check. When distributing via Intune, set to `false`, otherwise Intune may overwrite a newer version that was installed by the user. |
+| `AllowKeyExport` | Bool (default `true`) | Whether encrypted backups may contain keys. `false`: backups contain profiles and assignments only. |
 
 Test locally (user level; values managed via Intune take precedence):
 
@@ -147,9 +149,21 @@ A business account takes precedence over “OneDrive-Personal”. **Keys are nev
 to restore or discard the backup (“Restore” or “Discard”). Assignments are only applied for existing folders; the keys
 have to be entered again. As long as a found backup has been neither restored nor discarded, it is not overwritten.
 
+## Encrypted backup and restore
+
+*Backup › Export Backup…* (toolbar or *File* menu) writes profiles, project assignments and keys into a `.kzbackup` file,
+encrypted with a password of at least 12 characters. *Import Backup…* restores them on the same or another Mac:
+profiles and keys with the same ID are overwritten, and projects are assigned if their folder exists. The password is
+stored nowhere – without it the backup cannot be restored.
+
+Encryption: AES-256-GCM with a key derived via PBKDF2-HMAC-SHA256 (600,000 iterations, random salt). The file
+parameters are authenticated, so a wrong password or a modified file is detected. The file is saved with permissions
+`0600`. With `AllowKeyExport = false` the backup contains no keys. Unlike the automatic OneDrive backup (never keys),
+this backup is created manually and on demand.
+
 ## Updates and version
 
-On startup the app checks the latest [GitHub release](https://github.com/bl0rb/AIKeyZapper/releases); you can also check manually via
+On startup the app checks the latest [GitHub release](https://github.com/bl0rb/ClaudeKeyZapper/releases); you can also check manually via
 *KeyZapper › Check for Updates…* or the version line at the bottom of the app. If a newer version is available, “Install”
 downloads the `.pkg`, verifies the SHA-256 checksum published by GitHub, and opens the macOS installer.
 Administrator rights are required. Packages are only downloaded from `github.com`. The installed version is shown at the bottom of the

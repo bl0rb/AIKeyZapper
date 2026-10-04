@@ -31,6 +31,7 @@ Claude Code ──apiKeyHelper──▶ keyzapper-helper ──▶ macOS-Schlüs
 * Übersicht mit allen Profilen, maskierten Keys und zugeordneten Projekten. Alles lässt sich direkt ändern; Keys lassen sich kopieren und ersetzen.
 * Update-Prüfung gegen die GitHub-Releases mit Installation per Klick; die Version steht in der App und unter „Über KeyZapper“.
 * Oberfläche auf Deutsch und Englisch (folgt der macOS-Systemsprache).
+* Verschlüsseltes Backup und Wiederherstellen von Profilen, Zuordnungen und Keys (`.kzbackup`, passwortgeschützt).
 * Steuerbar per Intune: vorgegebene Profile, Gateway-Allowlist, Standardwerte, CLI-Mindestversion, OneDrive-Backup, Update-Prüfung.
 
 ## Voraussetzungen
@@ -133,6 +134,7 @@ Schlüssel-Wert-Paare ohne `<plist>`/`<dict>`-Rahmen, wie Intune es verlangt.
 | `OneDriveBackup` | Bool | Backup von Profilen und Zuordnungen nach OneDrive (siehe unten) |
 | `BackupDirectory` | String, `~` erlaubt | Expliziter Backup-Ordner; aktiviert das Backup auch ohne `OneDriveBackup` |
 | `UpdateCheckEnabled` | Bool (Standard `true`) | In-App-Update-Prüfung. Bei Verteilung über Intune auf `false` setzen, sonst kann Intune eine selbst installierte neuere Version wieder überschreiben. |
+| `AllowKeyExport` | Bool (Standard `true`) | Ob verschlüsselte Backups Keys enthalten dürfen. `false`: Backups enthalten nur Profile und Zuordnungen. |
 
 Lokal testen (Benutzerebene; per Intune verwaltete Werte haben Vorrang):
 
@@ -147,9 +149,22 @@ Ein Geschäftskonto hat Vorrang vor „OneDrive-Personal“. **Keys werden nie g
 an, das Backup wiederherzustellen oder zu verwerfen. Zuordnungen werden nur für vorhandene Ordner übernommen, die Keys
 trägt man neu ein. Solange ein gefundenes Backup nicht wiederhergestellt oder verworfen wurde, wird es nicht überschrieben.
 
+## Verschlüsseltes Backup und Wiederherstellen
+
+*Backup › Backup exportieren …* (Symbolleiste oder Menü *Ablage*) schreibt Profile, Projektzuordnungen und Keys in eine
+`.kzbackup`-Datei, verschlüsselt mit einem Passwort von mindestens 12 Zeichen. *Backup importieren …* stellt sie auf
+demselben oder einem anderen Mac wieder her: Profile und Keys mit gleicher ID werden überschrieben, Projekte werden
+zugeordnet, sofern ihr Ordner existiert. Das Passwort wird nirgends gespeichert; ohne Passwort ist das Backup nicht
+wiederherstellbar.
+
+Verschlüsselung: AES-256-GCM mit einem Schlüssel aus PBKDF2-HMAC-SHA256 (600.000 Runden, zufälliges Salt). Die
+Dateiparameter sind authentifiziert, ein falsches Passwort oder eine veränderte Datei wird erkannt. Die Datei wird mit
+den Rechten `0600` gespeichert. Mit `AllowKeyExport = false` enthält das Backup keine Keys. Anders als das automatische
+OneDrive-Backup (nie Keys) entsteht dieses Backup manuell und bei Bedarf.
+
 ## Updates und Version
 
-Beim Start prüft die App das neueste [GitHub-Release](https://github.com/bl0rb/AIKeyZapper/releases); manuell geht es über
+Beim Start prüft die App das neueste [GitHub-Release](https://github.com/bl0rb/ClaudeKeyZapper/releases); manuell geht es über
 *KeyZapper › Nach Updates suchen …* oder die Versionszeile unten in der App. Ist eine neuere Version verfügbar, lädt
 „Installieren“ das `.pkg` herunter, prüft die von GitHub veröffentlichte SHA-256-Prüfsumme und öffnet den macOS-Installer.
 Dafür sind Administratorrechte nötig. Pakete werden nur von `github.com` geladen. Die installierte Version steht unten in der

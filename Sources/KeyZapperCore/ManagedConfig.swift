@@ -29,9 +29,11 @@ public struct ManagedConfig: Equatable, Sendable {
     /// `UpdateCheckEnabled`: in-app update check against GitHub releases (default on). Turn off when Intune
     /// distributes a fixed version, otherwise Intune may reinstall it over a self-installed update.
     public var updateCheckEnabled = true
+    /// `AllowKeyExport`: whether encrypted backups may contain keys (default on). Off: settings only.
+    public var allowKeyExport = true
 
     static let keys = ["ManagedProfiles", "AllowedGatewayHosts", "DefaultEndpoint", "DefaultModelAlias",
-                       "MinimumClaudeCodeVersion", "OneDriveBackup", "BackupDirectory", "UpdateCheckEnabled"]
+                       "MinimumClaudeCodeVersion", "OneDriveBackup", "BackupDirectory", "UpdateCheckEnabled", "AllowKeyExport"]
 
     public init() {}
 
@@ -49,6 +51,7 @@ public struct ManagedConfig: Equatable, Sendable {
         oneDriveBackup = values["OneDriveBackup"] as? Bool ?? false
         backupDirectory = values["BackupDirectory"] as? String
         updateCheckEnabled = values["UpdateCheckEnabled"] as? Bool ?? true
+        allowKeyExport = values["AllowKeyExport"] as? Bool ?? true
     }
 
     public static func load(domain: String = ManagedConfig.domain) -> ManagedConfig {

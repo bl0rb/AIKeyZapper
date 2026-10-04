@@ -19,6 +19,7 @@ struct ContentView: View {
                     Text("Lege ein Profil mit LiteLLM-Endpunkt, Modellalias und deinem freigegebenen Key an.")
                 } actions: {
                     Button("Profil anlegen") { showNewProfile = true }.buttonStyle(.borderedProminent)
+                    Button("Backup importieren …") { model.backupSheet = .import }.buttonStyle(.link)
                     Button("So funktioniert’s") { showHowItWorks = true }.buttonStyle(.link)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -46,7 +47,19 @@ struct ContentView: View {
                 Button { showAddProject = true } label: { Label("Projekt zuordnen", systemImage: "folder.badge.plus") }
                     .disabled(model.state.profiles.isEmpty)
                 Button { model.refresh() } label: { Label("Status aktualisieren", systemImage: "arrow.clockwise") }
+                Menu {
+                    Button("Backup exportieren …") { model.backupSheet = .export }.disabled(model.state.profiles.isEmpty)
+                    Button("Backup importieren …") { model.backupSheet = .import }
+                } label: {
+                    Label("Backup", systemImage: "externaldrive.badge.timemachine")
+                }
                 Button { showHowItWorks = true } label: { Label("So funktioniert’s", systemImage: "info.circle") }
+            }
+        }
+        .sheet(item: Binding(get: { model.backupSheet }, set: { model.backupSheet = $0 })) { sheet in
+            switch sheet {
+            case .export: ExportBackupSheet()
+            case .import: ImportBackupSheet()
             }
         }
         .sheet(isPresented: $showHowItWorks) { HowItWorksView() }
