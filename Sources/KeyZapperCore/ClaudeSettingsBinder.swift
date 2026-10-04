@@ -54,8 +54,10 @@ public struct ClaudeSettingsBinder {
             "env.ANTHROPIC_API_KEY": "",
             "env.ANTHROPIC_AUTH_TOKEN": "",
         ]
-        let alias = profile.modelAlias.trimmingCharacters(in: .whitespaces)
-        if !alias.isEmpty { values["env.ANTHROPIC_MODEL"] = alias }
+        for (name, value) in profile.modelEnvironment { values["env." + name] = value }
+        for (name, value) in profile.environment ?? [:] where Profile.isAllowedEnvironmentName(name) {
+            values["env." + name] = value
+        }
         return values
     }
 

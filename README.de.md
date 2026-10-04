@@ -42,7 +42,7 @@ Claude Code ──apiKeyHelper──▶ keyzapper-helper ──▶ macOS-Schlüs
 
 ## Nutzung
 
-1. **Profil anlegen:** Name, LiteLLM-Endpunkt, optional Modellalias, Key. Von der IT vorgegebene Profile sind bereits da; dort nur den Key eintragen.
+1. **Profil anlegen:** Name, LiteLLM-Endpunkt, Key und optional die Modellnamen des Gateways für Opus, Sonnet und Haiku. *Modelle vom Gateway laden* listet die Modelle, die der Key nutzen darf (LiteLLM `/v1/models`), und belegt die Stufen vor. Von der IT vorgegebene Profile sind bereits da; dort nur den Key eintragen.
 2. **Projekt zuordnen:** Ordner wählen und Profil auswählen. Bei Git-Repositories gilt die Zuordnung für das ganze Repository
    samt Unterordnern und Worktrees. Claude Code liest die Projekteinstellungen nur am Root des Haupt-Checkouts.
 3. **Claude-Sitzung im Projekt neu starten**, in VS Code eine neue Unterhaltung bzw. das Fenster neu laden.
@@ -76,7 +76,8 @@ Die App schreibt in `<Projekt>/.claude/settings.local.json`:
 |---|---|
 | `apiKeyHelper` | `'/Applications/KeyZapper.app/Contents/Helpers/keyzapper-helper' credential --profile <UUID>` |
 | `env.ANTHROPIC_BASE_URL` | LiteLLM-Endpunkt des Profils |
-| `env.ANTHROPIC_MODEL` | Modellalias (falls gesetzt) |
+| `env.ANTHROPIC_DEFAULT_OPUS_MODEL`, `…_SONNET_MODEL`, `…_HAIKU_MODEL`, `env.ANTHROPIC_MODEL` | Modellnamen des Gateways aus dem Profil (falls gesetzt), z. B. `eu.anthropic.claude-sonnet-5-…` |
+| weitere `env.*` | Zusätzliche Umgebungsvariablen des Profils, z. B. `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1` für Bedrock über LiteLLM |
 | `env.ANTHROPIC_API_KEY`, `env.ANTHROPIC_AUTH_TOKEN` | `""`. Das neutralisiert geerbte Werte aus IDE oder Shell, die sonst gemischte Auth-Header erzeugen. |
 
 Bestehende Einstellungen bleiben erhalten. Änderungen sind atomar und idempotent: Wiederholtes Einrichten ändert nichts.
@@ -127,7 +128,7 @@ Schlüssel-Wert-Paare ohne `<plist>`/`<dict>`-Rahmen, wie Intune es verlangt.
 
 | Schlüssel | Typ | Wirkung |
 |---|---|---|
-| `ManagedProfiles` | Array von Dicts: `Name`, `Endpoint`, optional `ModelAlias`, optional `ID` | Profile werden automatisch angelegt und sind nicht editier- oder löschbar; Entwickler tragen nur den Key ein. Ohne `ID` wird die Profil-ID aus `Name` abgeleitet, eine Umbenennung erzeugt also ein neues Profil. |
+| `ManagedProfiles` | Array von Dicts: `Name`, `Endpoint`, optional `OpusModel`, `SonnetModel`, `HaikuModel`, `ModelAlias`, `Environment` (Dict), `ID` | Profile werden automatisch angelegt und sind nicht editier- oder löschbar; Entwickler tragen nur den Key ein. Ohne `ID` wird die Profil-ID aus `Name` abgeleitet, eine Umbenennung erzeugt also ein neues Profil. |
 | `AllowedGatewayHosts` | Array von Strings (`host` oder `*.domain`) | Profile nur für diese Hosts. Der Helper gibt Keys für andere Hosts nicht heraus (Exit 78). Leer bedeutet keine Einschränkung. |
 | `DefaultEndpoint`, `DefaultModelAlias` | String | Vorbelegung beim Anlegen eigener Profile |
 | `MinimumClaudeCodeVersion` | String | Schwelle für die Warnung vor veralteten Claude-CLIs (Standard 2.1.288) |

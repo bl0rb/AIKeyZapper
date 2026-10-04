@@ -131,6 +131,9 @@ struct ProfileCard: View {
                         }
                         Text(profile.endpoint.absoluteString + (profile.modelAlias.isEmpty ? "" : L(" · Modell \(profile.modelAlias)")))
                             .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                        if !tierModels.isEmpty {
+                            Text(verbatim: tierModels).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                        }
                     }
                     Spacer()
                     Button("Bearbeiten") { editing = true }.disabled(isManaged)
@@ -154,9 +157,8 @@ struct ProfileCard: View {
                 }
                 if checking { ProgressView().controlSize(.small) }
                 if let checkResult {
-                    let ok: Bool = { if case .ok(let available) = checkResult { return available != false } else { return false } }()
-                    Label(checkResult.message, systemImage: ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .foregroundStyle(ok ? .green : .orange)
+                    Label(checkResult.message, systemImage: checkResult.isSuccess ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(checkResult.isSuccess ? .green : .orange)
                 }
 
                 assignedProjects
@@ -179,6 +181,13 @@ struct ProfileCard: View {
     }
 
     private var keyColor: Color { hasKey ? .green : .red }
+
+    /// "Opus … · Sonnet … · Haiku …" for the tiers mapped to gateway model names.
+    private var tierModels: String {
+        [("Opus", profile.opusModel), ("Sonnet", profile.sonnetModel), ("Haiku", profile.haikuModel)]
+            .compactMap { tier, model in model.map { "\(tier) \($0)" } }
+            .joined(separator: " · ")
+    }
 
     /// The key as a framed chip, so it reads as the thing the projects below are assigned to.
     private var keyChip: some View {

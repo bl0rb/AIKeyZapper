@@ -42,7 +42,7 @@ Claude Code ──apiKeyHelper──▶ keyzapper-helper ──▶ macOS Keychai
 
 ## Usage
 
-1. **Create profile:** name, LiteLLM endpoint, optional model alias, key. Profiles managed by IT are already there; just enter the key.
+1. **Create profile:** name, LiteLLM endpoint, key and optionally the gateway model names for Opus, Sonnet and Haiku. *Load models from gateway* lists the models the key may use (LiteLLM `/v1/models`) and fills the tiers. Profiles managed by IT are already there; just enter the key.
 2. **Assign project:** choose a folder and select a profile. For Git repositories the assignment applies to the whole repository
    including subfolders and worktrees. Claude Code reads the project settings only at the root of the main checkout.
 3. **Restart the Claude session in the project**; in VS Code, start a new conversation or reload the window.
@@ -76,7 +76,8 @@ The app writes to `<project>/.claude/settings.local.json`:
 |---|---|
 | `apiKeyHelper` | `'/Applications/KeyZapper.app/Contents/Helpers/keyzapper-helper' credential --profile <UUID>` |
 | `env.ANTHROPIC_BASE_URL` | LiteLLM endpoint of the profile |
-| `env.ANTHROPIC_MODEL` | Model alias (if set) |
+| `env.ANTHROPIC_DEFAULT_OPUS_MODEL`, `…_SONNET_MODEL`, `…_HAIKU_MODEL`, `env.ANTHROPIC_MODEL` | Gateway model names of the profile (if set), e.g. `eu.anthropic.claude-sonnet-5-…` |
+| further `env.*` | Additional environment variables of the profile, e.g. `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1` for Bedrock via LiteLLM |
 | `env.ANTHROPIC_API_KEY`, `env.ANTHROPIC_AUTH_TOKEN` | `""`. This neutralizes inherited values from the IDE or shell that would otherwise produce mixed auth headers. |
 
 Existing settings are preserved. Changes are atomic and idempotent: setting up repeatedly changes nothing.
@@ -127,7 +128,7 @@ key-value pairs without the `<plist>`/`<dict>` wrapper, as Intune requires.
 
 | Key | Type | Effect |
 |---|---|---|
-| `ManagedProfiles` | Array of dicts: `Name`, `Endpoint`, optional `ModelAlias`, optional `ID` | Profiles are created automatically and cannot be edited or deleted; developers only enter the key. Without `ID` the profile ID is derived from `Name`, so renaming creates a new profile. |
+| `ManagedProfiles` | Array of dicts: `Name`, `Endpoint`, optional `OpusModel`, `SonnetModel`, `HaikuModel`, `ModelAlias`, `Environment` (dict), `ID` | Profiles are created automatically and cannot be edited or deleted; developers only enter the key. Without `ID` the profile ID is derived from `Name`, so renaming creates a new profile. |
 | `AllowedGatewayHosts` | Array of strings (`host` or `*.domain`) | Profiles only for these hosts. The helper does not release keys for other hosts (exit 78). Empty means no restriction. |
 | `DefaultEndpoint`, `DefaultModelAlias` | String | Prefill when creating your own profiles |
 | `MinimumClaudeCodeVersion` | String | Threshold for the warning about outdated Claude CLIs (default 2.1.288) |

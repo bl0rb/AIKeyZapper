@@ -7,11 +7,12 @@ import pathlib, re, sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CALLS = r'(?<![\w.])(?:Text|Button|Label|LabeledContent|TextField|SecureField|Picker|Link|GroupBox|WindowGroup|' \
-        r'LocalizedStringKey|ContentUnavailableView|L)\(\s*' \
+        r'LocalizedStringKey|ContentUnavailableView|L|modelField)\(\s*' \
         r'|(?<![\w.])(?:step\(\d+,|hint\("[^"]*",|node\("[^"]*",)\s*' \
         r'|\.(?:help|alert|confirmationDialog|navigationTitle)\(\s*'
 INT_EXPRS = {"backup.profiles.count", "backup.bindings.count", "bindings.count", "restored", "skipped",
-             "EncryptedBackup.minimumPasswordLength", "profileCount", "keyCount", "projectCount", "skippedCount"}
+             "EncryptedBackup.minimumPasswordLength", "profileCount", "keyCount", "projectCount", "skippedCount",
+             "gatewayModels.count"}
 
 def literal(src, i):
     """Parses a Swift string literal starting at src[i] == '"'. Returns (key, end index)."""

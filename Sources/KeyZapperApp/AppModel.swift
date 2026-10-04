@@ -104,6 +104,10 @@ final class AppModel {
             profile.name = managed.name
             profile.endpoint = managed.endpoint
             profile.modelAlias = managed.modelAlias
+            profile.opusModel = managed.opusModel
+            profile.sonnetModel = managed.sonnetModel
+            profile.haikuModel = managed.haikuModel
+            profile.environment = managed.environment
             if state.profile(managed.id) != profile { saveProfile(profile, newKey: nil) }
         }
     }
@@ -135,7 +139,7 @@ final class AppModel {
         if let i = state.profiles.firstIndex(where: { $0.id == profile.id }) { state.profiles[i] = profile } else { state.profiles.append(profile) }
         guard persist() else { return false }
         if let newKey, !newKey.isEmpty { storeKey(newKey, for: profile) }
-        if let old, old.endpoint != profile.endpoint || old.modelAlias != profile.modelAlias {
+        if let old, old != profile {
             for binding in state.bindings where binding.profileID == profile.id { apply(profile, folder: binding.path, previous: binding) }
         }
         refresh()
@@ -226,7 +230,26 @@ final class AppModel {
         guard let helper else { return nil }
         let result = await Task.detached { helper.run("credential", profile.id) }.value
         guard result.code == HelperExitCode.ok.rawValue else { errorMessage = result.message; return nil }
-        return await GatewayCheck.run(endpoint: profile.endpoint, key: result.stdout, modelAlias: profile.modelAlias)
+        return await GatewayCheck.run(endpoint: profile.endpoint, key: result.stdout, models: profile.configuredModels)
+    }
+
+    /// Lists the gateway's model names for a key: the one typed in the editor, else the stored key of the profile.
+    func availableModels(endpoint: URL, typedKey: String, profileID: UUID?) async -> [String]? {
+        var key = typedKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if key.isEmpty, let profileID, let helper {
+            let result = await Task.detached { helper.run("credential", profileID) }.value
+            guard result.code == HelperExitCode.ok.rawValue else { errorMessage = result.message; return nil }
+            key = result.stdout
+        }
+        guard !key.isEmpty else { errorMessage = L("Für den Modellabruf wird ein Key benötigt."); return nil }
+        switch await GatewayCheck.models(endpoint: endpoint, key: key) {
+        case .success(let models):
+            if models.isEmpty { errorMessage = L("Das Gateway hat keine Modelle für diesen Key gemeldet.") }
+            return models
+        case .failure(let failure):
+            errorMessage = failure.result.message
+            return nil
+        }
     }
 
     // MARK: Bindings

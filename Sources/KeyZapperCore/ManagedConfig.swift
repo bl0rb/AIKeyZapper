@@ -11,9 +11,14 @@ public struct ManagedConfig: Equatable, Sendable {
         public var name: String
         public var endpoint: URL
         public var modelAlias: String
+        public var opusModel: String?
+        public var sonnetModel: String?
+        public var haikuModel: String?
+        public var environment: [String: String]?
     }
 
-    /// `ManagedProfiles`: array of dicts with `Name`, `Endpoint`, optional `ModelAlias`, optional `ID` (UUID).
+    /// `ManagedProfiles`: array of dicts with `Name`, `Endpoint`, optional `ModelAlias`, `OpusModel`, `SonnetModel`,
+    /// `HaikuModel`, `Environment` (dict) and `ID` (UUID).
     public var profiles: [ManagedProfile] = []
     /// `AllowedGatewayHosts`: exact hosts or `*.domain`; empty = no restriction.
     public var allowedGatewayHosts: [String] = []
@@ -42,7 +47,9 @@ public struct ManagedConfig: Equatable, Sendable {
             guard let name = (dict["Name"] as? String)?.trimmingCharacters(in: .whitespaces), !name.isEmpty,
                   let endpoint = (dict["Endpoint"] as? String).flatMap(URL.init(string:)), endpoint.host() != nil else { return nil }
             let id = (dict["ID"] as? String).flatMap(UUID.init(uuidString:)) ?? Self.derivedID(forName: name)
-            return ManagedProfile(id: id, name: name, endpoint: endpoint, modelAlias: dict["ModelAlias"] as? String ?? "")
+            return ManagedProfile(id: id, name: name, endpoint: endpoint, modelAlias: dict["ModelAlias"] as? String ?? "",
+                                  opusModel: dict["OpusModel"] as? String, sonnetModel: dict["SonnetModel"] as? String,
+                                  haikuModel: dict["HaikuModel"] as? String, environment: dict["Environment"] as? [String: String])
         }
         allowedGatewayHosts = (values["AllowedGatewayHosts"] as? [String] ?? []).map { $0.lowercased() }.filter { !$0.isEmpty }
         defaultEndpoint = values["DefaultEndpoint"] as? String

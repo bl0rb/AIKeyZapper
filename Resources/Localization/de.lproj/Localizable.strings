@@ -9,6 +9,7 @@
 "%@ liegt in einem Git-Repository. Claude Code liest Projekteinstellungen nur aus %@." = "%@ liegt in einem Git-Repository. Claude Code liest Projekteinstellungen nur aus %@.";
 "%@ wurde während der Änderung mehrfach von einem anderen Prozess geändert. Bitte erneut versuchen." = "%@ wurde während der Änderung mehrfach von einem anderen Prozess geändert. Bitte erneut versuchen.";
 "%@: „%@“ ist bereits mit einem anderen Wert gesetzt. Bitte manuell entfernen." = "%@: „%@“ ist bereits mit einem anderen Wert gesetzt. Bitte manuell entfernen.";
+"%lld Modelle verfügbar" = "%lld Modelle verfügbar";
 ", %lld übersprungen (Ordner fehlt oder Konflikt)" = ", %lld übersprungen (Ordner fehlt oder Konflikt)";
 "--profile" = "--profile";
 ". Keys werden nicht gesichert – bitte je Profil neu eintragen." = ". Keys werden nicht gesichert – bitte je Profil neu eintragen.";
@@ -37,6 +38,9 @@
 "Claude holt den Key selbst" = "Claude holt den Key selbst";
 "Claude-Code-CLI veraltet: %@" = "Claude-Code-CLI veraltet: %@";
 "Claude-Einstellungen sind nicht lesbar: %@" = "Claude-Einstellungen sind nicht lesbar: %@";
+"Claude-Standard" = "Claude-Standard";
+"Claude-Standard verwenden" = "Claude-Standard verwenden";
+"Das Gateway hat keine Modelle für diesen Key gemeldet." = "Das Gateway hat keine Modelle für diesen Key gemeldet.";
 "Das Passwort muss mindestens %lld Zeichen haben." = "Das Passwort muss mindestens %lld Zeichen haben.";
 "Das Release enthält kein Installationspaket." = "Das Release enthält kein Installationspaket.";
 "Der Endpunkt %@ ist laut Firmenrichtlinie nicht freigegeben. Erlaubt: %@" = "Der Endpunkt %@ ist laut Firmenrichtlinie nicht freigegeben. Erlaubt: %@";
@@ -53,6 +57,8 @@
 "Die Passwörter stimmen nicht überein." = "Die Passwörter stimmen nicht überein.";
 "Die Zuordnung gilt für das ganze Repository samt Unterordnern und Worktrees. Außerhalb zugeordneter Ordner nutzt Claude die normale Anmeldung." = "Die Zuordnung gilt für das ganze Repository samt Unterordnern und Worktrees. Außerhalb zugeordneter Ordner nutzt Claude die normale Anmeldung.";
 "Dieses Backup stammt von einer neueren KeyZapper-Version. Bitte App aktualisieren." = "Dieses Backup stammt von einer neueren KeyZapper-Version. Bitte App aktualisieren.";
+"Eigene Modellnamen des Gateways für die Modellstufen von Claude Code. Leer lassen, um den Claude-Standard zu verwenden." = "Eigene Modellnamen des Gateways für die Modellstufen von Claude Code. Leer lassen, um den Claude-Standard zu verwenden.";
+"Eine pro Zeile im Format NAME=Wert, z. B. CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1 für Bedrock über LiteLLM. Key, Endpunkt und Modelle werden oben gesetzt." = "Eine pro Zeile im Format NAME=Wert, z. B. CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1 für Bedrock über LiteLLM. Key, Endpunkt und Modelle werden oben gesetzt.";
 "Einmal einrichten" = "Einmal einrichten";
 "Einmal zuordnen – danach musst du nie wieder Keys wechseln." = "Einmal zuordnen – danach musst du nie wieder Keys wechseln.";
 "Einstellungen erneut schreiben" = "Einstellungen erneut schreiben";
@@ -69,8 +75,10 @@
 "Fehlt ein Key, schlagen Anfragen fehl. Es wird nie ein anderer Key verwendet." = "Fehlt ein Key, schlagen Anfragen fehl. Es wird nie ein anderer Key verwendet.";
 "Für Profil %@ ist kein Key im Schlüsselbund hinterlegt." = "Für Profil %@ ist kein Key im Schlüsselbund hinterlegt.";
 "Für das Profil ist kein Key hinterlegt – Claude-Anfragen schlagen fehl." = "Für das Profil ist kein Key hinterlegt – Claude-Anfragen schlagen fehl.";
+"Für den Modellabruf wird ein Key benötigt." = "Für den Modellabruf wird ein Key benötigt.";
 "Gateway nicht erreichbar (VPN?): %@" = "Gateway nicht erreichbar (VPN?): %@";
 "Gut zu wissen" = "Gut zu wissen";
+"Haiku" = "Haiku";
 "Hilfsprogramm %@ wurde nicht gefunden. Bitte App neu installieren." = "Hilfsprogramm %@ wurde nicht gefunden. Bitte App neu installieren.";
 "Host nicht freigegeben. Erlaubt: %@" = "Host nicht freigegeben. Erlaubt: %@";
 "Im Finder zeigen" = "Im Finder zeigen";
@@ -103,7 +111,8 @@
 "Metadaten sind beschädigt: %@" = "Metadaten sind beschädigt: %@";
 "Metadaten-Version %@ wird von dieser Version nicht unterstützt. Bitte App aktualisieren." = "Metadaten-Version %@ wird von dieser Version nicht unterstützt. Bitte App aktualisieren.";
 "Mindestens %lld Zeichen. Ohne dieses Passwort lässt sich das Backup nicht wiederherstellen – es wird nirgends gespeichert." = "Mindestens %lld Zeichen. Ohne dieses Passwort lässt sich das Backup nicht wiederherstellen – es wird nirgends gespeichert.";
-"Modellalias" = "Modellalias";
+"Modelle" = "Modelle";
+"Modelle vom Gateway laden" = "Modelle vom Gateway laden";
 "Nach Updates suchen" = "Nach Updates suchen";
 "Nach Updates suchen …" = "Nach Updates suchen …";
 "Nach dem Zuordnen oder einem Profilwechsel die Claude-Sitzung im Projekt einmal neu starten." = "Nach dem Zuordnen oder einem Profilwechsel die Claude-Sitzung im Projekt einmal neu starten.";
@@ -121,6 +130,7 @@
 "OneDrive-Backup fehlgeschlagen: %@" = "OneDrive-Backup fehlgeschlagen: %@";
 "OneDrive-Backup gefunden: %lld Profil(e), %lld Projekt(e)" = "OneDrive-Backup gefunden: %lld Profil(e), %lld Projekt(e)";
 "OneDrive-Backup ist aktiviert, aber es wurde kein OneDrive-Ordner gefunden. Bitte in OneDrive anmelden." = "OneDrive-Backup ist aktiviert, aber es wurde kein OneDrive-Ordner gefunden. Bitte in OneDrive anmelden.";
+"Opus" = "Opus";
 "Ordner nicht gefunden (verschoben oder gelöscht). Zuordnung entfernen und neu zuordnen." = "Ordner nicht gefunden (verschoben oder gelöscht). Zuordnung entfernen und neu zuordnen.";
 "Ordner nicht gefunden: %@" = "Ordner nicht gefunden: %@";
 "Paket wird geladen und geprüft …" = "Paket wird geladen und geprüft …";
@@ -147,20 +157,23 @@
 "Sichern" = "Sichern";
 "So funktioniert KeyZapper" = "So funktioniert KeyZapper";
 "So funktioniert’s" = "So funktioniert’s";
+"Sonnet" = "Sonnet";
+"Standardmodell" = "Standardmodell";
 "Startet Claude Code in VS Code, IntelliJ oder im Terminal, ruft es den Helper auf. Der liefert genau den Key dieses Projekts – auch wenn KeyZapper geschlossen ist." = "Startet Claude Code in VS Code, IntelliJ oder im Terminal, ruft es den Helper auf. Der liefert genau den Key dieses Projekts – auch wenn KeyZapper geschlossen ist.";
 "Status aktualisieren" = "Status aktualisieren";
 "Status unbekannt" = "Status unbekannt";
 "Unbekanntes Profil" = "Unbekanntes Profil";
 "Unbekanntes Profil: %@" = "Unbekanntes Profil: %@";
 "Unerwartete Antwort vom Gateway (HTTP %@)." = "Unerwartete Antwort vom Gateway (HTTP %@).";
+"Ungültig oder nicht erlaubt: %@" = "Ungültig oder nicht erlaubt: %@";
 "Ungültige Profil-ID: %@" = "Ungültige Profil-ID: %@";
 "Update konnte nicht geladen werden: %@" = "Update konnte nicht geladen werden: %@";
 "Update-Prüfung fehlgeschlagen: %@" = "Update-Prüfung fehlgeschlagen: %@";
 "Update-Server nicht erreichbar (HTTP %@)." = "Update-Server nicht erreichbar (HTTP %@).";
 "Updates werden von der IT verteilt; die Update-Prüfung ist abgeschaltet." = "Updates werden von der IT verteilt; die Update-Prüfung ist abgeschaltet.";
 "Updates über die IT" = "Updates über die IT";
-"Verbindung erfolgreich, Modellalias ist verfügbar." = "Verbindung erfolgreich, Modellalias ist verfügbar.";
-"Verbindung erfolgreich, aber der Modellalias ist für diesen Key nicht freigegeben." = "Verbindung erfolgreich, aber der Modellalias ist für diesen Key nicht freigegeben.";
+"Verbindung erfolgreich, aber diese Modelle sind für den Key nicht freigegeben: %@" = "Verbindung erfolgreich, aber diese Modelle sind für den Key nicht freigegeben: %@";
+"Verbindung erfolgreich, alle Modelle sind verfügbar." = "Verbindung erfolgreich, alle Modelle sind verfügbar.";
 "Verbindung erfolgreich." = "Verbindung erfolgreich.";
 "Verbindung prüfen" = "Verbindung prüfen";
 "Verschlüsseltes Backup gespeichert: %lld Profil(e), %lld Key(s), %lld Projekt(e)." = "Verschlüsseltes Backup gespeichert: %lld Profil(e), %lld Key(s), %lld Projekt(e).";
@@ -172,6 +185,7 @@
 "Verwerfen" = "Verwerfen";
 "Von der IT vorgegeben" = "Von der IT vorgegeben";
 "Von der IT vorgegeben – nur der Key kann geändert werden." = "Von der IT vorgegeben – nur der Key kann geändert werden.";
+"Weitere Umgebungsvariablen" = "Weitere Umgebungsvariablen";
 "Wiederherstellen" = "Wiederherstellen";
 "Zugriff auf den Schlüsselbund verweigert (OSStatus %@)." = "Zugriff auf den Schlüsselbund verweigert (OSStatus %@).";
 "Zuordnen" = "Zuordnen";
@@ -184,7 +198,6 @@
 "kein gültiges JSON-Objekt" = "kein gültiges JSON-Objekt";
 "keyzapper-helper" = "keyzapper-helper";
 "leer lassen, um den Key zu behalten" = "leer lassen, um den Key zu behalten";
-"optional, z. B. claude-sonnet" = "optional, z. B. claude-sonnet";
 "schemaVersion fehlt" = "schemaVersion fehlt";
 "z. B. Projekt Alpha" = "z. B. Projekt Alpha";
 "Ändern" = "Ändern";

@@ -5,8 +5,17 @@
     <string>Projekt Alpha</string>
     <key>Endpoint</key>
     <string>https://litellm.firma.example</string>
-    <key>ModelAlias</key>
-    <string>claude-sonnet</string>
+    <key>OpusModel</key>
+    <string>eu.anthropic.claude-opus-5-team</string>
+    <key>SonnetModel</key>
+    <string>eu.anthropic.claude-sonnet-5-team</string>
+    <key>HaikuModel</key>
+    <string>eu.anthropic.claude-haiku-4-5</string>
+    <key>Environment</key>
+    <dict>
+      <key>CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS</key>
+      <string>1</string>
+    </dict>
   </dict>
 </array>
 <key>AllowedGatewayHosts</key>

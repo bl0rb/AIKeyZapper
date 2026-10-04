@@ -27,7 +27,7 @@ struct ExportBackupSheet: View {
             } footer: {
                 Text("Mindestens \(EncryptedBackup.minimumPasswordLength) Zeichen. Ohne dieses Passwort lässt sich das Backup nicht wiederherstellen – es wird nirgends gespeichert.")
                     .font(.caption).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
             }
             Section {
                 if model.config.allowKeyExport {
@@ -92,7 +92,7 @@ struct ImportBackupSheet: View {
             } footer: {
                 Text("Profile und Keys aus dem Backup überschreiben vorhandene mit gleicher ID. Projekte werden zugeordnet, sofern ihr Ordner auf diesem Mac existiert.")
                     .font(.caption).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .formStyle(.grouped)
