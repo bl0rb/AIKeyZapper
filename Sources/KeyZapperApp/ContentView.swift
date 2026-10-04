@@ -8,6 +8,8 @@ struct ContentView: View {
     @ViewState private var showNewProfile = false
     @ViewState private var showAddProject = false
     @ViewState private var showHowItWorks = false
+    @ViewState private var showClaudeSettings = false
+    @ViewState private var confirmDisable = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -46,12 +48,23 @@ struct ContentView: View {
                 Button { showAddProject = true } label: { Label("Projekt zuordnen", systemImage: "folder.badge.plus") }
                     .disabled(model.state.profiles.isEmpty)
                 Button { model.refresh() } label: { Label("Status aktualisieren", systemImage: "arrow.clockwise") }
+                Button { model.refresh(); showClaudeSettings = true } label: {
+                    Label("Claude-Einstellungen prüfen", systemImage: "checkmark.shield")
+                }
+                .help("~/.claude/settings.json prüfen, reparieren und Standardprofil setzen")
                 Menu {
                     Button("Backup exportieren …") { model.backupSheet = .export }.disabled(model.state.profiles.isEmpty)
                     Button("Backup importieren …") { model.backupSheet = .import }
                 } label: {
                     Label("Backup", systemImage: "externaldrive.badge.timemachine")
                 }
+                Toggle(isOn: Binding(get: { !model.isDisabled }, set: { enabled in
+                    if enabled { model.setDisabled(false) } else { confirmDisable = true }
+                })) {
+                    Label("KeyZapper aktiv", systemImage: "power")
+                }
+                .toggleStyle(.switch)
+                .help("KeyZapper vorübergehend deaktivieren: Projekte nutzen dann die normale Claude-Anmeldung")
                 Button { showHowItWorks = true } label: { Label("So funktioniert’s", systemImage: "info.circle") }
             }
         }
@@ -62,6 +75,12 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showHowItWorks) { HowItWorksView() }
+        .sheet(isPresented: $showClaudeSettings) { ClaudeSettingsSheet() }
+        .confirmationDialog("KeyZapper deaktivieren?", isPresented: $confirmDisable) {
+            Button("Deaktivieren", role: .destructive) { model.setDisabled(true) }
+        } message: {
+            Text("KeyZapper entfernt seine Einträge aus allen Projekten und aus ~/.claude/settings.json. Die Zuordnungen bleiben gespeichert und werden beim Aktivieren wieder geschrieben.")
+        }
         .sheet(isPresented: $showNewProfile) { ProfileEditor(existing: nil) }
         .sheet(isPresented: $showAddProject) { AddProjectSheet() }
         .alert("Fehler", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
@@ -75,7 +94,7 @@ struct ContentView: View {
         VStack(spacing: 0) {
             if let backup = model.availableBackup {
                 Banner(kind: .info,
-                       title: L("OneDrive-Backup gefunden: \(backup.profiles.count) Profil(e), \(backup.bindings.count) Projekt(e)"),
+                       title: L("OneDrive-Backup gefunden: \(String(backup.profiles.count)) Profil(e), \(String(backup.bindings.count)) Projekt(e)"),
                        detail: L("Profile und Zuordnungen wiederherstellen? Keys sind nicht im Backup und müssen neu eingetragen werden."),
                        actions: [BannerAction(title: L("Wiederherstellen"), action: model.restoreFromBackup),
                                  BannerAction(title: L("Verwerfen"), action: model.discardBackup)])
@@ -83,13 +102,18 @@ struct ContentView: View {
             if let problem = model.backupProblem {
                 Banner(kind: .warning, title: problem)
             }
-            if let path = model.invalidUserSettingsPath {
+            if model.isDisabled {
                 Banner(kind: .warning,
-                       title: L("\((path as NSString).abbreviatingWithTildeInPath) ist kein gültiges JSON"),
-                       detail: L("Claude Code ignoriert die Datei, und das Speichern der Modellauswahl schlägt fehl. Fehler finden mit „python3 -m json.tool ~/.claude/settings.json“ oder die Datei löschen."),
-                       actions: [BannerAction(title: L("Im Finder zeigen")) {
-                           NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
-                       }])
+                       title: L("KeyZapper ist deaktiviert"),
+                       detail: L("Claude Code nutzt in allen Projekten die normale Anmeldung. Die Zuordnungen bleiben gespeichert."),
+                       actions: [BannerAction(title: L("Aktivieren")) { model.setDisabled(false) }])
+            }
+            let problems = model.globalFindings.filter { $0.severity != .info }
+            if let first = problems.first {
+                Banner(kind: .warning,
+                       title: L("~/.claude/settings.json: \(String(problems.count)) Hinweis(e)"),
+                       detail: first.message,
+                       actions: [BannerAction(title: L("Prüfen")) { showClaudeSettings = true }])
             }
             if !model.outdatedCLIs.isEmpty {
                 Banner(kind: .warning,
@@ -151,7 +175,9 @@ struct ProfileCard: View {
                 HStack {
                     keyChip
                     Spacer()
-                    Button("Kopieren", systemImage: "doc.on.doc") { model.copyKey(profile) }.disabled(!hasKey)
+                    Button("Kopieren", systemImage: "doc.on.doc") { model.copyKey(profile) }
+                        .disabled(!hasKey || !model.config.allowKeyExport)
+                        .help(model.config.allowKeyExport ? Text(verbatim: "") : Text("Laut Firmenrichtlinie deaktiviert"))
                     Button(hasKey ? LocalizedStringKey("Ändern") : LocalizedStringKey("Key hinterlegen"), systemImage: "pencil") { replacingKey = true }
                     Button("Verbindung prüfen") {
                         checking = true
@@ -182,7 +208,7 @@ struct ProfileCard: View {
             if bindings.isEmpty {
                 Text("Der Key wird aus dem Schlüsselbund entfernt.")
             } else {
-                Text("Der Key wird aus dem Schlüsselbund entfernt und \(bindings.count) Projektzuordnung(en) werden zurückgenommen.")
+                Text("Der Key wird aus dem Schlüsselbund entfernt und \(String(bindings.count)) Projektzuordnung(en) werden zurückgenommen.")
             }
         }
         .onChange(of: profile) { checkResult = nil }
@@ -223,7 +249,7 @@ struct ProfileCard: View {
                     } else if bindings.count == 1 {
                         Text("Nutzen diesen Key · 1 Projekt")
                     } else {
-                        Text("Nutzen diesen Key · \(bindings.count) Projekte")
+                        Text("Nutzen diesen Key · \(String(bindings.count)) Projekte")
                     }
                 } icon: {
                     Image(systemName: "arrow.turn.down.right")
@@ -262,7 +288,11 @@ struct ProjectRow: View {
         let keyPresent = model.keyPresent[binding.profileID] == true
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                StatusIcon(status: status, keyPresent: keyPresent)
+                if model.isDisabled {
+                    Image(systemName: "pause.circle").foregroundStyle(.secondary)
+                } else {
+                    StatusIcon(status: status, keyPresent: keyPresent)
+                }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(AppModel.folderName(binding.path)).fontWeight(.medium)
                     Text((binding.path as NSString).abbreviatingWithTildeInPath)
@@ -274,6 +304,7 @@ struct ProjectRow: View {
                 }
                 .labelsHidden()
                 .fixedSize()
+                .disabled(model.isDisabled)
                 .help("Profil für dieses Projekt wechseln")
                 Button("Im Finder zeigen", systemImage: "folder") {
                     NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: binding.path)])
@@ -281,13 +312,15 @@ struct ProjectRow: View {
                 .labelStyle(.iconOnly)
                 Button("Erneut anwenden", systemImage: "arrow.triangle.2.circlepath") { model.reapply(binding) }
                     .labelStyle(.iconOnly)
-                    .disabled(status?.health == .folderMissing)
+                    .disabled(status?.health == .folderMissing || model.isDisabled)
                     .help("Einstellungen erneut schreiben")
                 Button("Entfernen", systemImage: "trash", role: .destructive) { confirmUnbind = true }
                     .labelStyle(.iconOnly)
                     .help("Zuordnung entfernen")
             }
-            if status?.health != .active || !keyPresent {
+            if model.isDisabled {
+                Text("Deaktiviert – Claude nutzt hier die normale Anmeldung.").font(.caption).foregroundStyle(.secondary)
+            } else if status?.health != .active || !keyPresent {
                 Text(Self.describe(status?.health, keyPresent: keyPresent))
                     .font(.caption).foregroundStyle(StatusIcon.appearance(status, keyPresent: keyPresent).1)
             }

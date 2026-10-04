@@ -4,9 +4,13 @@ import Foundation
 /// Written only by the app; the helper reads it to validate profile IDs.
 public struct MetadataStore: Sendable {
     public let fileURL: URL
+    /// Full copy next to the state file. Older app versions rewrite `state.json` without fields they do not know;
+    /// on load those fields are restored from this mirror, so a downgrade does not lose them.
+    let mirrorURL: URL?
 
-    public init(fileURL: URL = MetadataStore.defaultDirectory.appendingPathComponent("state.json")) {
+    public init(fileURL: URL = MetadataStore.defaultDirectory.appendingPathComponent("state.json"), mirror: Bool = true) {
         self.fileURL = fileURL
+        self.mirrorURL = mirror ? fileURL.deletingPathExtension().appendingPathExtension("full.json") : nil
     }
 
     /// `~/Library/Application Support/KeyZapper`, overridable via `KEYZAPPER_HOME` (tests, spikes).
@@ -25,7 +29,30 @@ public struct MetadataStore: Sendable {
             }
             return AppState()
         }
-        return try Self.decode(data)
+        let state = try Self.decode(data)
+        guard let mirrorURL, let mirrorData = try? Data(contentsOf: mirrorURL), let mirror = try? Self.decode(mirrorData) else {
+            return state
+        }
+        return Self.restoringDroppedFields(state, from: mirror)
+    }
+
+    /// Copies fields an older app version dropped (model tiers, environment, global profile, deactivation).
+    static func restoringDroppedFields(_ state: AppState, from mirror: AppState) -> AppState {
+        var result = state
+        for index in result.profiles.indices {
+            let profile = result.profiles[index]
+            guard profile.opusModel == nil, profile.sonnetModel == nil, profile.haikuModel == nil, profile.environment == nil,
+                  let saved = mirror.profile(profile.id), saved.endpoint == profile.endpoint else { continue }
+            result.profiles[index].opusModel = saved.opusModel
+            result.profiles[index].sonnetModel = saved.sonnetModel
+            result.profiles[index].haikuModel = saved.haikuModel
+            result.profiles[index].environment = saved.environment
+        }
+        if result.globalBinding == nil, let global = mirror.globalBinding, result.profile(global.profileID) != nil {
+            result.globalBinding = global
+        }
+        if result.disabled == nil { result.disabled = mirror.disabled }
+        return result
     }
 
     public func save(_ state: AppState) throws {
@@ -35,8 +62,11 @@ public struct MetadataStore: Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         var current = state
         current.schemaVersion = AppState.currentSchemaVersion
-        try encoder.encode(current).write(to: fileURL, options: [.atomic])
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+        let data = try encoder.encode(current)
+        for url in [fileURL, mirrorURL].compactMap({ $0 }) {
+            try data.write(to: url, options: [.atomic])
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        }
     }
 
     /// Decodes any known schema version and migrates it to the current one.

@@ -101,7 +101,7 @@ public enum BackupError: Error, Equatable, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .passwordTooShort: L("Das Passwort muss mindestens \(EncryptedBackup.minimumPasswordLength) Zeichen haben.")
+        case .passwordTooShort: L("Das Passwort muss mindestens \(String(EncryptedBackup.minimumPasswordLength)) Zeichen haben.")
         case .notABackup: L("Die Datei ist kein KeyZapper-Backup.")
         case .unsupportedVersion: L("Dieses Backup stammt von einer neueren KeyZapper-Version. Bitte App aktualisieren.")
         case .wrongPasswordOrCorrupt: L("Falsches Passwort oder beschädigte Backup-Datei.")

@@ -6,7 +6,7 @@ entries so German lookups never fall back to English. Exits 1 if a key lacks a t
 or format specifiers differ. Run with --write to regenerate Resources/Localization/{en,de}.lproj."""
 import pathlib, re, sys
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
-from l10n_keys import ROOT, keys
+from l10n_keys import ROOT, keys, NUMERIC_PROBLEMS
 from l10n_en import EN
 
 def specs(s): return re.findall(r'%(?:lld|@|d)', s)
@@ -16,6 +16,7 @@ found = keys()
 problems = [f"missing English: {k!r} ({w})" for k, w in found.items() if k not in EN]
 problems += [f"stale English: {k!r}" for k in EN if k not in found]
 problems += [f"format mismatch: {k!r}" for k, v in EN.items() if specs(k) != specs(v)]
+problems += [f"number interpolation, wrap in String(…): {e}" for e in NUMERIC_PROBLEMS]
 if '--write' in sys.argv:
     for lang, table in (('en', EN), ('de', {k: k for k in EN})):
         out = ROOT / 'Resources/Localization' / f'{lang}.lproj' / 'Localizable.strings'

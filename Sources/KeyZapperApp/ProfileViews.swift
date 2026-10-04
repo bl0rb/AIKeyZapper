@@ -64,10 +64,10 @@ struct ProfileEditor: View {
                 modelField("Standardmodell", text: $modelAlias)
                 HStack {
                     Button("Modelle vom Gateway laden") { loadModels() }
-                        .disabled(endpointURL == nil || loadingModels || (existing == nil && key.isEmpty))
+                        .disabled(endpointURL == nil || !endpointAllowed || loadingModels || (existing == nil && key.isEmpty))
                     if loadingModels { ProgressView().controlSize(.small) }
                     if !gatewayModels.isEmpty {
-                        Text("\(gatewayModels.count) Modelle verfügbar").font(.caption).foregroundStyle(.secondary)
+                        Text("\(String(gatewayModels.count)) Modelle verfügbar").font(.caption).foregroundStyle(.secondary)
                     }
                 }
             } header: {

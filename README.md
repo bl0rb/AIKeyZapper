@@ -135,7 +135,7 @@ key-value pairs without the `<plist>`/`<dict>` wrapper, as Intune requires.
 | `OneDriveBackup` | Bool | Backup of profiles and assignments to OneDrive (see below) |
 | `BackupDirectory` | String, `~` allowed | Explicit backup folder; enables the backup even without `OneDriveBackup` |
 | `UpdateCheckEnabled` | Bool (default `true`) | In-app update check. When distributing via Intune, set to `false`, otherwise Intune may overwrite a newer version that was installed by the user. |
-| `AllowKeyExport` | Bool (default `true`) | Whether encrypted backups may contain keys. `false`: backups contain profiles and assignments only. |
+| `AllowKeyExport` | Bool (default `true`) | Whether keys may leave the Keychain via the app. `false`: no copying to the clipboard; backups contain profiles and assignments only. |
 
 Test locally (user level; values managed via Intune take precedence):
 
@@ -149,6 +149,24 @@ The app backs up profiles and project assignments to `~/Library/CloudStorage/One
 A business account takes precedence over “OneDrive-Personal”. **Keys are never backed up.** On a new Mac the app offers
 to restore or discard the backup (“Restore” or “Discard”). Assignments are only applied for existing folders; the keys
 have to be entered again. As long as a found backup has been neither restored nor discarded, it is not overwritten.
+
+## Claude settings check and default profile
+
+*Check Claude settings* (shield icon in the toolbar) checks `~/.claude/settings.json` for problems Claude Code accepts
+silently: invalid JSON (validated with the same strict `JSON.parse` as Claude Code, e.g. trailing commas), plaintext keys,
+an endpoint without a key, non-text values in `env`, provider switches that bypass LiteLLM, model variables and fixed
+model IDs instead of an alias. A banner shows problems at any time.
+
+* **Repair / Create** makes the file valid, removes plaintext keys and turns `env` values into text. A missing file is
+  created. Before every change KeyZapper saves a backup `settings.json.keyzapper-<time>.bak`.
+* **Default profile** writes a profile into `~/.claude/settings.json`, so Claude Code uses it in all folders without their
+  own assignment instead of a plaintext key or the normal login. Assigned projects keep their own profile.
+
+## Deactivating KeyZapper
+
+The switch in the toolbar deactivates KeyZapper: it removes its entries from all projects and from
+`~/.claude/settings.json`, so Claude Code uses its normal login everywhere. The assignments stay saved and are written
+again when activating.
 
 ## Encrypted backup and restore
 
@@ -166,7 +184,7 @@ this backup is created manually and on demand.
 
 On startup the app checks the latest [GitHub release](https://github.com/bl0rb/ClaudeKeyZapper/releases); you can also check manually via
 *KeyZapper › Check for Updates…* or the version line at the bottom of the app. If a newer version is available, “Install”
-downloads the `.pkg`, verifies the SHA-256 checksum published by GitHub, and opens the macOS installer.
+downloads the `.pkg`, verifies the SHA-256 checksum published by GitHub (without a published checksum the update is refused) and opens the macOS installer.
 Administrator rights are required. Packages are only downloaded from `github.com`. The installed version is shown at the bottom of the
 app and under *KeyZapper › About KeyZapper*.
 

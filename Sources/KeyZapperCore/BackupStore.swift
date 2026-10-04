@@ -24,11 +24,11 @@ public struct BackupStore: Sendable {
     }
 
     public func write(_ state: AppState) throws {
-        try MetadataStore(fileURL: fileURL).save(state)
+        try MetadataStore(fileURL: fileURL, mirror: false).save(state)
     }
 
     public func read() throws -> AppState? {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
-        return try MetadataStore(fileURL: fileURL).load()
+        return try MetadataStore(fileURL: fileURL, mirror: false).load()
     }
 }

@@ -42,6 +42,10 @@ public struct Profile: Codable, Identifiable, Hashable, Sendable {
         self.credential = CredentialReference(account: id.uuidString)
     }
 
+    /// The keychain item of this profile, always derived from the ID. The stored `credential` field comes from
+    /// files (state, backups) and is never trusted for keychain access.
+    public var keychainReference: CredentialReference { CredentialReference(account: id.uuidString) }
+
     /// Environment entries KeyZapper writes for the model settings (only non-empty values).
     public var modelEnvironment: [String: String] {
         var values: [String: String] = [:]
@@ -121,6 +125,10 @@ public struct AppState: Codable, Equatable, Sendable {
     public var schemaVersion: Int
     public var profiles: [Profile]
     public var bindings: [WorkspaceBinding]
+    /// Default profile written into `~/.claude/settings.json` for folders without their own assignment.
+    public var globalBinding: WorkspaceBinding? = nil
+    /// True while KeyZapper is deactivated: assignments stay saved, their settings are removed from the files.
+    public var disabled: Bool? = nil
 
     public init(profiles: [Profile] = [], bindings: [WorkspaceBinding] = []) {
         self.schemaVersion = AppState.currentSchemaVersion

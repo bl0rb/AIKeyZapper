@@ -59,17 +59,17 @@ public struct KeyHelperCommand {
         do {
             switch args[0] {
             case "credential":
-                return Output(exitCode: .ok, stdout: try store.read(profile.credential), stderr: "")
+                return Output(exitCode: .ok, stdout: try store.read(profile.keychainReference), stderr: "")
             case "store":
                 let secret = stdin().trimmingCharacters(in: .whitespacesAndNewlines)
-                try store.write(secret, label: "KeyZapper – \(profile.name)", for: profile.credential)
+                try store.write(secret, label: "KeyZapper – \(profile.name)", for: profile.keychainReference)
                 return Output(exitCode: .ok, stdout: "", stderr: "")
             case "status":
-                return try store.exists(profile.credential)
+                return try store.exists(profile.keychainReference)
                     ? Output(exitCode: .ok, stdout: "", stderr: "")
                     : fail(.missingCredential, KeyZapperError.missingCredential(id).localizedDescription)
             default:
-                try store.delete(profile.credential)
+                try store.delete(profile.keychainReference)
                 return Output(exitCode: .ok, stdout: "", stderr: "")
             }
         } catch let error as KeyZapperError {

@@ -47,8 +47,13 @@ final class AppModel {
     /// Masked key per profile (`••••` + last 4 characters) so the assignment is visible; never the full key.
     private(set) var keyHints: [UUID: String] = [:]
     private(set) var availableUpdate: ReleaseInfo?
-    /// Path of `~/.claude/settings.json` when it exists but is not valid JSON.
-    private(set) var invalidUserSettingsPath: String?
+    /// Findings of the logical check of `~/.claude/settings.json`.
+    private(set) var globalFindings: [SettingsFinding] = []
+    /// State of the default profile in `~/.claude/settings.json`, nil if none is set.
+    private(set) var globalHealth: BindingHealth?
+    var isDisabled: Bool { state.disabled == true }
+    var userSettingsPath: String { binder?.userSettingsPath ?? canonicalPath("~/.claude/settings.json") }
+    private var refreshGeneration = 0
     private(set) var isInstallingUpdate = false
     /// Nil for development builds without an app bundle.
     let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -114,21 +119,64 @@ final class AppModel {
         }
     }
 
+    /// Recomputes key presence, project status and the settings check off the main thread; the newest run wins.
     func refresh() {
         guard let helper, let binder else {
             errorMessage = L("Hilfsprogramm \(KeyHelperCommand.executableName) wurde nicht gefunden. Bitte App neu installieren.")
             return
         }
-        invalidUserSettingsPath = ClaudeSettingsBinder.isUnparsableJSON(binder.userSettingsPath) ? binder.userSettingsPath : nil
-        for profile in state.profiles {
-            let result = helper.run("credential", profile.id)
-            keyPresent[profile.id] = result.code != HelperExitCode.missingCredential.rawValue
-            keyHints[profile.id] = result.code == HelperExitCode.ok.rawValue ? "••••" + String(result.stdout.suffix(4)) : nil
-        }
-        for binding in state.bindings {
-            if let profile = state.profile(binding.profileID) { statuses[binding.id] = binder.inspect(binding, profile: profile) }
+        refreshGeneration += 1
+        let generation = refreshGeneration, state = self.state, knownHints = keyHints
+        Task {
+            let snapshot = await Task.detached { Self.status(of: state, helper: helper, binder: binder, knownHints: knownHints) }.value
+            guard generation == refreshGeneration else { return }
+            keyPresent = snapshot.keyPresent
+            keyHints = snapshot.keyHints
+            statuses = snapshot.statuses
+            globalHealth = snapshot.globalHealth
+            globalFindings = snapshot.globalFindings
         }
     }
+
+    struct StatusSnapshot: Sendable {
+        var keyPresent: [UUID: Bool] = [:]
+        var keyHints: [UUID: String] = [:]
+        var statuses: [UUID: BindingStatus] = [:]
+        var globalHealth: BindingHealth?
+        var globalFindings: [SettingsFinding] = []
+    }
+
+    /// Key presence via `status` (no secret read); the masked hint is read once per profile and then cached.
+    nonisolated static func status(of state: AppState, helper: HelperClient, binder: ClaudeSettingsBinder,
+                                   knownHints: [UUID: String]) -> StatusSnapshot {
+        var snapshot = StatusSnapshot()
+        for profile in state.profiles {
+            let present = helper.run("status", profile.id).code != HelperExitCode.missingCredential.rawValue
+            snapshot.keyPresent[profile.id] = present
+            guard present else { continue }
+            if let hint = knownHints[profile.id] {
+                snapshot.keyHints[profile.id] = hint
+            } else {
+                let result = helper.run("credential", profile.id)
+                if result.code == HelperExitCode.ok.rawValue { snapshot.keyHints[profile.id] = maskedHint(result.stdout) }
+            }
+        }
+        let globalValues = state.globalBinding?.managedValues ?? [:]
+        if state.disabled != true {
+            for binding in state.bindings {
+                if let profile = state.profile(binding.profileID) {
+                    snapshot.statuses[binding.id] = binder.inspect(binding, profile: profile, globalValues: globalValues)
+                }
+            }
+            if let global = state.globalBinding, let profile = state.profile(global.profileID) {
+                snapshot.globalHealth = binder.inspectGlobal(global, profile: profile)
+            }
+        }
+        snapshot.globalFindings = GlobalSettingsAudit.check(path: binder.userSettingsPath, globalValues: globalValues)
+        return snapshot
+    }
+
+    nonisolated static func maskedHint(_ key: String) -> String { "••••" + String(key.suffix(4)) }
 
     // MARK: Profiles
 
@@ -142,8 +190,9 @@ final class AppModel {
         if let i = state.profiles.firstIndex(where: { $0.id == profile.id }) { state.profiles[i] = profile } else { state.profiles.append(profile) }
         guard persist() else { return false }
         if let newKey, !newKey.isEmpty { storeKey(newKey, for: profile) }
-        if let old, old != profile {
+        if let old, old != profile, !isDisabled {
             for binding in state.bindings where binding.profileID == profile.id { apply(profile, folder: binding.path, previous: binding) }
+            if let global = state.globalBinding, global.profileID == profile.id { applyGlobal(profile, previous: global) }
         }
         refresh()
         return true
@@ -153,6 +202,7 @@ final class AppModel {
         guard let helper else { return }
         let result = helper.run("store", profile.id, stdin: key)
         if result.code == HelperExitCode.ok.rawValue {
+            keyHints[profile.id] = Self.maskedHint(key.trimmingCharacters(in: .whitespacesAndNewlines))
             notice = L("Key für „\(profile.name)“ gespeichert. Neue Claude-Sitzungen verwenden ihn sofort, laufende nach Ablauf des Helper-Caches (Standard 5 min), nach einem 401 oder nach Neustart.")
         } else {
             errorMessage = result.message
@@ -167,6 +217,10 @@ final class AppModel {
         guard let helper else { return }
         let result = helper.run("delete", profile.id)
         guard result.code == HelperExitCode.ok.rawValue else { errorMessage = result.message; return }
+        if let global = state.globalBinding, global.profileID == profile.id {
+            _ = try? binder?.revertGlobal(global)
+            state.globalBinding = nil
+        }
         state.profiles.removeAll { $0.id == profile.id }
         keyPresent[profile.id] = nil
         keyHints[profile.id] = nil
@@ -175,6 +229,10 @@ final class AppModel {
 
     /// Copies the key marked as concealed (ignored by clipboard managers) and clears it after 60 s if unchanged.
     func copyKey(_ profile: Profile) {
+        guard config.allowKeyExport else {
+            errorMessage = L("Das Kopieren von Keys ist laut Firmenrichtlinie (AllowKeyExport) deaktiviert.")
+            return
+        }
         guard let helper else { return }
         let result = helper.run("credential", profile.id)
         guard result.code == HelperExitCode.ok.rawValue else { errorMessage = result.message; return }
@@ -238,6 +296,10 @@ final class AppModel {
 
     /// Lists the gateway's model names for a key: the one typed in the editor, else the stored key of the profile.
     func availableModels(endpoint: URL, typedKey: String, profileID: UUID?) async -> [String]? {
+        guard config.isEndpointAllowed(endpoint) else {
+            errorMessage = L("Der Endpunkt \(endpoint.host() ?? "") ist laut Firmenrichtlinie nicht freigegeben. Erlaubt: \(config.allowedGatewayHosts.joined(separator: ", "))")
+            return nil
+        }
         var key = typedKey.trimmingCharacters(in: .whitespacesAndNewlines)
         if key.isEmpty, let profileID, let helper {
             let result = await Task.detached { helper.run("credential", profileID) }.value
@@ -291,6 +353,10 @@ final class AppModel {
     @discardableResult
     private func apply(_ profile: Profile, folder: String, previous: WorkspaceBinding?) -> Bool {
         guard let binder else { return false }
+        guard !isDisabled else {
+            errorMessage = L("KeyZapper ist deaktiviert. Bitte zuerst wieder aktivieren.")
+            return false
+        }
         do {
             let result = try binder.apply(profile: profile, folder: folder, previous: previous)
             if let i = state.bindings.firstIndex(where: { $0.id == result.binding.id }) { state.bindings[i] = result.binding } else { state.bindings.append(result.binding) }
@@ -344,8 +410,8 @@ final class AppModel {
         }
         let skipped = backup.bindings.count - restored
         refresh()
-        notice = L("Backup wiederhergestellt: \(backup.profiles.count) Profil(e), \(restored) Projekt(e)")
-            + (skipped > 0 ? L(", \(skipped) übersprungen (Ordner fehlt oder Konflikt)") : "")
+        notice = L("Backup wiederhergestellt: \(String(backup.profiles.count)) Profil(e), \(String(restored)) Projekt(e)")
+            + (skipped > 0 ? L(", \(String(skipped)) übersprungen (Ordner fehlt oder Konflikt)") : "")
             + L(". Keys werden nicht gesichert – bitte je Profil neu eintragen.")
     }
 
@@ -374,7 +440,7 @@ final class AppModel {
             try data.write(to: url, options: .atomic)
             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
             let profileCount = state.profiles.count, keyCount = keys.count, projectCount = state.bindings.count
-            notice = L("Verschlüsseltes Backup gespeichert: \(profileCount) Profil(e), \(keyCount) Key(s), \(projectCount) Projekt(e).")
+            notice = L("Verschlüsseltes Backup gespeichert: \(String(profileCount)) Profil(e), \(String(keyCount)) Key(s), \(String(projectCount)) Projekt(e).")
             return true
         } catch {
             errorMessage = error.localizedDescription
@@ -385,6 +451,10 @@ final class AppModel {
     /// Restores profiles and keys from an encrypted backup and re-assigns projects whose folders exist on this Mac.
     func importBackup(from url: URL, password: String) async -> Bool {
         guard let helper else { return false }
+        guard !isDisabled else {
+            errorMessage = L("KeyZapper ist deaktiviert. Bitte zuerst wieder aktivieren.")
+            return false
+        }
         let payload: BackupPayload
         do {
             let data = try Data(contentsOf: url)
@@ -394,10 +464,15 @@ final class AppModel {
             return false
         }
         var skippedCount = 0
-        for profile in payload.state.profiles {
+        var changedProfiles: Set<UUID> = []
+        for var profile in payload.state.profiles {
             guard config.isEndpointAllowed(profile.endpoint) else { skippedCount += 1; continue }
+            profile.credential = profile.keychainReference
             if let i = state.profiles.firstIndex(where: { $0.id == profile.id }) {
-                if !isManaged(profile.id) { state.profiles[i] = profile }
+                if !isManaged(profile.id) && state.profiles[i] != profile {
+                    state.profiles[i] = profile
+                    changedProfiles.insert(profile.id)
+                }
             } else {
                 state.profiles.append(profile)
             }
@@ -406,7 +481,10 @@ final class AppModel {
         var keyCount = 0
         for (id, key) in payload.keys {
             guard let uuid = UUID(uuidString: id), state.profile(uuid) != nil else { continue }
-            if helper.run("store", uuid, stdin: key).code == HelperExitCode.ok.rawValue { keyCount += 1 }
+            if helper.run("store", uuid, stdin: key).code == HelperExitCode.ok.rawValue {
+                keyCount += 1
+                keyHints[uuid] = Self.maskedHint(key)
+            }
         }
         var projectCount = 0
         for binding in payload.state.bindings {
@@ -417,11 +495,97 @@ final class AppModel {
             let previous = state.bindings.first { $0.path == binding.path } ?? binding
             if apply(profile, folder: binding.path, previous: previous) { projectCount += 1 } else { skippedCount += 1 }
         }
+        // Existing assignments of profiles the backup changed must pick up the new endpoint and models too.
+        let importedPaths = Set(payload.state.bindings.map(\.path))
+        for binding in state.bindings where changedProfiles.contains(binding.profileID) && !importedPaths.contains(binding.path) {
+            if let profile = state.profile(binding.profileID) { apply(profile, folder: binding.path, previous: binding) }
+        }
+        if let global = state.globalBinding, changedProfiles.contains(global.profileID), let profile = state.profile(global.profileID) {
+            applyGlobal(profile, previous: global)
+        }
         refresh()
         let profileCount = payload.state.profiles.count
-        notice = L("Backup importiert: \(profileCount) Profil(e), \(keyCount) Key(s), \(projectCount) Projekt(e).")
-            + (skippedCount > 0 ? L(" \(skippedCount) Eintrag/Einträge übersprungen (Ordner fehlt, Konflikt oder nicht freigegebener Endpunkt).") : "")
+        notice = L("Backup importiert: \(String(profileCount)) Profil(e), \(String(keyCount)) Key(s), \(String(projectCount)) Projekt(e).")
+            + (skippedCount > 0 ? L(" \(String(skippedCount)) Eintrag/Einträge übersprungen (Ordner fehlt, Konflikt oder nicht freigegebener Endpunkt).") : "")
         return true
+    }
+
+    // MARK: ~/.claude/settings.json (default profile, repair) and deactivation
+
+    /// Sets (or with nil removes) the default profile in `~/.claude/settings.json` for folders without assignment.
+    func setGlobalProfile(_ profileID: UUID?) {
+        guard let binder else { return }
+        guard !isDisabled else { errorMessage = L("KeyZapper ist deaktiviert. Bitte zuerst wieder aktivieren."); return }
+        if let profileID, let profile = state.profile(profileID) {
+            let backup = state.globalBinding == nil ? try? binder.backupUserSettings() : nil
+            if applyGlobal(profile, previous: state.globalBinding) {
+                notice = L("Standardprofil „\(profile.name)“ in ~/.claude/settings.json eingetragen. Es gilt für alle Ordner ohne eigene Zuordnung.")
+                    + (backup.map { L(" Sicherung: \($0.lastPathComponent)") } ?? "")
+            }
+        } else if let global = state.globalBinding {
+            do {
+                try binder.revertGlobal(global)
+                state.globalBinding = nil
+                persist()
+                notice = L("Standardprofil aus ~/.claude/settings.json entfernt.")
+            } catch { errorMessage = error.localizedDescription }
+        }
+        refresh()
+    }
+
+    @discardableResult
+    private func applyGlobal(_ profile: Profile, previous: WorkspaceBinding?) -> Bool {
+        guard let binder else { return false }
+        do {
+            state.globalBinding = try binder.applyGlobal(profile: profile, previous: previous).binding
+            persist()
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Backs up and cleans `~/.claude/settings.json` (valid JSON, no plaintext keys) or creates it.
+    func repairUserSettings() {
+        guard let binder else { return }
+        do {
+            let backup = try binder.repairUserSettings()
+            if !isDisabled, let global = state.globalBinding, let profile = state.profile(global.profileID) {
+                applyGlobal(profile, previous: global)
+            }
+            notice = L("~/.claude/settings.json ist jetzt gültig und frei von Klartext-Keys.")
+                + (backup.map { L(" Sicherung: \($0.lastPathComponent)") } ?? "")
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        refresh()
+    }
+
+    /// Deactivation removes KeyZapper's values from all projects and the user settings but keeps the assignments,
+    /// so activating writes them again. Claude Code meanwhile uses its normal login everywhere.
+    func setDisabled(_ disable: Bool) {
+        guard let binder, disable != isDisabled else { return }
+        if disable {
+            var failed: [String] = []
+            for binding in state.bindings {
+                do { try binder.revert(binding) } catch { failed.append(Self.folderName(binding.path)) }
+            }
+            if let global = state.globalBinding { _ = try? binder.revertGlobal(global) }
+            state.disabled = true
+            persist()
+            notice = L("KeyZapper ist deaktiviert. Claude Code nutzt jetzt überall die normale Anmeldung; laufende Sitzungen bitte neu starten.")
+            if !failed.isEmpty { errorMessage = L("Diese Projekte konnten nicht zurückgesetzt werden: \(failed.joined(separator: ", "))") }
+        } else {
+            state.disabled = nil
+            persist()
+            for binding in state.bindings {
+                if let profile = state.profile(binding.profileID) { apply(profile, folder: binding.path, previous: binding) }
+            }
+            if let global = state.globalBinding, let profile = state.profile(global.profileID) { applyGlobal(profile, previous: global) }
+            notice = L("KeyZapper ist wieder aktiv. Laufende Claude-Sitzungen bitte neu starten.")
+        }
+        refresh()
     }
 
     func discardBackup() {

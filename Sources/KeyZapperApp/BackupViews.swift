@@ -25,7 +25,7 @@ struct ExportBackupSheet: View {
             } header: {
                 Text("Backup exportieren")
             } footer: {
-                Text("Mindestens \(EncryptedBackup.minimumPasswordLength) Zeichen. Ohne dieses Passwort lässt sich das Backup nicht wiederherstellen – es wird nirgends gespeichert.")
+                Text("Mindestens \(String(EncryptedBackup.minimumPasswordLength)) Zeichen. Ohne dieses Passwort lässt sich das Backup nicht wiederherstellen – es wird nirgends gespeichert.")
                     .font(.caption).foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
             }

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Lists the localization keys used in Sources/ (German source strings) in .strings format notation.
 
-Covers SwiftUI literal initialisers (Text, Button, Label, …) and the L("…") helper. Interpolations become
-%lld for integer expressions listed in INT_EXPRS and %@ otherwise. Used by scripts/l10n_check.py."""
+Covers SwiftUI literal initialisers (Text, Button, Label, …) and the L("…") helper. Every interpolation becomes %@:
+numbers must be passed as String(…), otherwise SwiftUI/Foundation would look up %lld. Interpolations that look numeric
+are reported in NUMERIC_PROBLEMS. Used by scripts/l10n_check.py."""
 import pathlib, re, sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -10,9 +11,9 @@ CALLS = r'(?<![\w.])(?:Text|Button|Label|LabeledContent|TextField|SecureField|Pi
         r'LocalizedStringKey|ContentUnavailableView|L|modelField)\(\s*' \
         r'|(?<![\w.])(?:step\(\d+,|hint\("[^"]*",|node\("[^"]*",)\s*' \
         r'|\.(?:help|alert|confirmationDialog|navigationTitle)\(\s*'
-INT_EXPRS = {"backup.profiles.count", "backup.bindings.count", "bindings.count", "restored", "skipped",
-             "EncryptedBackup.minimumPasswordLength", "profileCount", "keyCount", "projectCount", "skippedCount",
-             "gatewayModels.count"}
+
+NUMERIC = re.compile(r'(\.count|Count|Length|restored|skipped)$')
+NUMERIC_PROBLEMS = []
 
 def literal(src, i):
     """Parses a Swift string literal starting at src[i] == '"'. Returns (key, end index)."""
@@ -24,7 +25,9 @@ def literal(src, i):
             while depth:
                 if src[j] == '"': j = literal(src, j)[1]; continue
                 depth += {'(': 1, ')': -1}.get(src[j], 0); j += 1
-            out.append('%lld' if src[i + 2:j - 1].strip() in INT_EXPRS else '%@'); i = j
+            expr = src[i + 2:j - 1].strip()
+            if NUMERIC.search(expr) and not expr.startswith('String('): NUMERIC_PROBLEMS.append(expr)
+            out.append('%@'); i = j
         elif src[i] == '\\': out.append(src[i:i + 2]); i += 2
         else: out.append(src[i]); i += 1
     return ''.join(out), i + 1

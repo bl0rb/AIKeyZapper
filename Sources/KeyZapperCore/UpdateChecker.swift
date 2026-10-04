@@ -55,7 +55,12 @@ public enum UpdateChecker {
             .appendingPathComponent(packageURL.lastPathComponent)
         try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.moveItem(at: tempFile, to: target)
-        if let expected = release.packageSHA256 { try verify(target, sha256: expected) }
+        // Without a published checksum the package cannot be verified: refuse instead of installing it blindly.
+        guard let expected = release.packageSHA256 else {
+            try? FileManager.default.removeItem(at: target)
+            throw UpdateError.missingChecksum
+        }
+        try verify(target, sha256: expected)
         return target
     }
 
@@ -76,12 +81,14 @@ public enum UpdateError: Error, Equatable, LocalizedError {
     case unavailable(Int)
     case noPackage
     case checksumMismatch
+    case missingChecksum
 
     public var errorDescription: String? {
         switch self {
         case .unavailable(let status): L("Update-Server nicht erreichbar (HTTP \(String(status))).")
         case .noPackage: L("Das Release enthält kein Installationspaket.")
         case .checksumMismatch: L("Prüfsumme des heruntergeladenen Pakets stimmt nicht. Installation abgebrochen.")
+        case .missingChecksum: L("Für das Paket ist keine Prüfsumme veröffentlicht. Bitte manuell von der Release-Seite installieren.")
         }
     }
 }
