@@ -22,3 +22,5 @@
 <string>2.1.288</string>
 <key>OneDriveBackup</key>
 <true/>
+<key>UpdateCheckEnabled</key>
+<false/>

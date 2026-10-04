@@ -1,5 +1,5 @@
+import AppKit
 import KeyZapperCore
-import Foundation
 import Observation
 
 /// Runs `keyzapper-helper`, the only process that touches the keychain. Keys go via stdin/stdout, never argv.
@@ -44,6 +44,12 @@ struct HelperClient: Sendable {
 final class AppModel {
     private(set) var state = AppState()
     private(set) var keyPresent: [UUID: Bool] = [:]
+    /// Masked key per profile (`••••` + last 4 characters) so the assignment is visible; never the full key.
+    private(set) var keyHints: [UUID: String] = [:]
+    private(set) var availableUpdate: ReleaseInfo?
+    private(set) var isInstallingUpdate = false
+    /// Nil for development builds without an app bundle.
+    let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
     private(set) var statuses: [UUID: BindingStatus] = [:]
     private(set) var outdatedCLIs: [String] = []
     /// Unrestored OneDrive backup found on a fresh install; while set, the backup is not overwritten.
@@ -80,6 +86,7 @@ final class AppModel {
         syncManagedProfiles()
         refresh()
         let minimum = minimumCLIVersion
+        Task { await checkForUpdates(userInitiated: false) }
         Task {
             let outdated = await Task.detached { ClaudeCLI.outdatedInstallations(minimum: minimum).map { "\(($0.path as NSString).abbreviatingWithTildeInPath) \($0.version)" } }.value
             outdatedCLIs = outdated
@@ -106,7 +113,11 @@ final class AppModel {
             errorMessage = "Hilfsprogramm \(KeyHelperCommand.executableName) wurde nicht gefunden. Bitte App neu installieren."
             return
         }
-        for profile in state.profiles { keyPresent[profile.id] = helper.run("status", profile.id).code == HelperExitCode.ok.rawValue }
+        for profile in state.profiles {
+            let result = helper.run("credential", profile.id)
+            keyPresent[profile.id] = result.code != HelperExitCode.missingCredential.rawValue
+            keyHints[profile.id] = result.code == HelperExitCode.ok.rawValue ? "••••" + String(result.stdout.suffix(4)) : nil
+        }
         for binding in state.bindings {
             if let profile = state.profile(binding.profileID) { statuses[binding.id] = binder.inspect(binding, profile: profile) }
         }
@@ -151,7 +162,64 @@ final class AppModel {
         guard result.code == HelperExitCode.ok.rawValue else { errorMessage = result.message; return }
         state.profiles.removeAll { $0.id == profile.id }
         keyPresent[profile.id] = nil
+        keyHints[profile.id] = nil
         persist()
+    }
+
+    /// Copies the key marked as concealed (ignored by clipboard managers) and clears it after 60 s if unchanged.
+    func copyKey(_ profile: Profile) {
+        guard let helper else { return }
+        let result = helper.run("credential", profile.id)
+        guard result.code == HelperExitCode.ok.rawValue else { errorMessage = result.message; return }
+        let pasteboard = NSPasteboard.general
+        let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+        pasteboard.declareTypes([.string, concealed], owner: nil)
+        pasteboard.setString(result.stdout, forType: .string)
+        pasteboard.setString("", forType: concealed)
+        let changeCount = pasteboard.changeCount
+        notice = "Key von „\(profile.name)“ kopiert. Er wird nach 60 Sekunden aus der Zwischenablage entfernt."
+        Task {
+            try? await Task.sleep(for: .seconds(60))
+            if NSPasteboard.general.changeCount == changeCount { NSPasteboard.general.clearContents() }
+        }
+    }
+
+    // MARK: Updates (GitHub releases)
+
+    func checkForUpdates(userInitiated: Bool) async {
+        guard config.updateCheckEnabled else {
+            if userInitiated { notice = "Updates werden von der IT verteilt; die Update-Prüfung ist abgeschaltet." }
+            return
+        }
+        guard let appVersion else {
+            if userInitiated { notice = "Entwicklungsversion – keine Update-Prüfung." }
+            return
+        }
+        do {
+            let release = try await UpdateChecker.latestRelease()
+            if UpdateChecker.isNewer(release.version, than: appVersion) {
+                availableUpdate = release
+            } else if userInitiated {
+                notice = "KeyZapper \(appVersion) ist aktuell."
+            }
+        } catch {
+            if userInitiated { errorMessage = "Update-Prüfung fehlgeschlagen: \(error.localizedDescription)" }
+        }
+    }
+
+    /// Downloads and verifies the package, then hands it to the macOS installer (admin rights required).
+    func installUpdate() async {
+        guard let release = availableUpdate, !isInstallingUpdate else { return }
+        isInstallingUpdate = true
+        defer { isInstallingUpdate = false }
+        do {
+            let package = try await UpdateChecker.downloadPackage(release)
+            NSWorkspace.shared.open(package)
+            notice = "Installer für KeyZapper \(release.version) geöffnet. Nach der Installation KeyZapper neu starten."
+            availableUpdate = nil
+        } catch {
+            errorMessage = "Update konnte nicht geladen werden: \(error.localizedDescription)"
+        }
     }
 
     func testConnection(_ profile: Profile) async -> GatewayCheckResult? {

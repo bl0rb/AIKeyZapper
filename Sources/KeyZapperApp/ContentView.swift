@@ -1,61 +1,44 @@
+import AppKit
 import KeyZapperCore
 import SwiftUI
 
-enum SidebarItem: Hashable {
-    case profile(UUID)
-    case project(UUID)
-}
-
+/// Single overview: every profile with its key and all assigned projects, editable in place.
 struct ContentView: View {
     @Environment(AppModel.self) private var model
-    @ViewState private var selection: SidebarItem?
     @ViewState private var showNewProfile = false
     @ViewState private var showAddProject = false
 
     var body: some View {
-        NavigationSplitView {
-            List(selection: $selection) {
-                Section("Profile") {
-                    ForEach(model.state.profiles) { profile in
-                        Label {
-                            VStack(alignment: .leading) {
-                                Text(profile.name)
-                                Text(profile.endpoint.host() ?? profile.endpoint.absoluteString).font(.caption).foregroundStyle(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: model.keyPresent[profile.id] == true ? "key.fill" : "key.slash")
-                                .foregroundStyle(model.keyPresent[profile.id] == true ? Color.accentColor : .red)
-                        }
-                        .tag(SidebarItem.profile(profile.id))
-                    }
+        VStack(spacing: 0) {
+            banners
+            if model.state.profiles.isEmpty {
+                ContentUnavailableView {
+                    Label("Noch keine Profile", systemImage: "key")
+                } description: {
+                    Text("Lege ein Profil mit LiteLLM-Endpunkt, Modellalias und deinem freigegebenen Key an.")
+                } actions: {
+                    Button("Profil anlegen") { showNewProfile = true }.buttonStyle(.borderedProminent)
                 }
-                Section("Projekte") {
-                    ForEach(model.state.bindings) { binding in
-                        Label {
-                            VStack(alignment: .leading) {
-                                Text(AppModel.folderName(binding.path))
-                                Text(model.profileName(binding.profileID)).font(.caption).foregroundStyle(.secondary)
-                            }
-                        } icon: {
-                            StatusIcon(status: model.statuses[binding.id], keyPresent: model.keyPresent[binding.profileID] == true)
-                        }
-                        .tag(SidebarItem.project(binding.id))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        ForEach(model.state.profiles) { ProfileCard(profile: $0) }
+                        Text("Änderungen gelten für neu gestartete Claude-Sitzungen (VS Code: neue Unterhaltung bzw. Fenster neu laden; IntelliJ: Claude neu starten). Laufende Sitzungen übernehmen einen neuen Key nach Ablauf des Helper-Caches (Standard 5 min) oder nach einem 401.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        VersionFooter()
                     }
+                    .padding(20)
                 }
             }
-            .navigationSplitViewColumnWidth(min: 230, ideal: 260)
-            .toolbar {
-                ToolbarItemGroup {
-                    Button { showNewProfile = true } label: { Label("Neues Profil", systemImage: "plus") }
-                    Button { showAddProject = true } label: { Label("Projekt zuordnen", systemImage: "folder.badge.plus") }
-                        .disabled(model.state.profiles.isEmpty)
-                    Button { model.refresh() } label: { Label("Status aktualisieren", systemImage: "arrow.clockwise") }
-                }
-            }
-        } detail: {
-            VStack(spacing: 0) {
-                banners
-                detail.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .navigationTitle("KeyZapper")
+        .toolbar {
+            ToolbarItemGroup {
+                Button { showNewProfile = true } label: { Label("Neues Profil", systemImage: "plus") }
+                Button { showAddProject = true } label: { Label("Projekt zuordnen", systemImage: "folder.badge.plus") }
+                    .disabled(model.state.profiles.isEmpty)
+                Button { model.refresh() } label: { Label("Status aktualisieren", systemImage: "arrow.clockwise") }
             }
         }
         .sheet(isPresented: $showNewProfile) { ProfileEditor(existing: nil) }
@@ -64,39 +47,6 @@ struct ContentView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(model.errorMessage ?? "")
-        }
-    }
-
-    @ViewBuilder private var detail: some View {
-        switch selection {
-        case .profile(let id):
-            if let profile = model.state.profile(id) { ProfileDetailView(profile: profile) } else { placeholder }
-        case .project(let id):
-            if let binding = model.state.bindings.first(where: { $0.id == id }) { ProjectDetailView(binding: binding) } else { placeholder }
-        case nil:
-            placeholder
-        }
-    }
-
-    @ViewBuilder private var placeholder: some View {
-        if model.state.profiles.isEmpty {
-            ContentUnavailableView {
-                Label("Noch keine Profile", systemImage: "key")
-            } description: {
-                Text("Lege ein Profil mit LiteLLM-Endpunkt, Modellalias und deinem freigegebenen Key an.")
-            } actions: {
-                Button("Profil anlegen") { showNewProfile = true }.buttonStyle(.borderedProminent)
-            }
-        } else if model.state.bindings.isEmpty {
-            ContentUnavailableView {
-                Label("Noch keine Projekte zugeordnet", systemImage: "folder")
-            } description: {
-                Text("Ordne einen Projektordner einem Profil zu. Claude Code verwendet dort dann automatisch den passenden Key.")
-            } actions: {
-                Button("Projekt zuordnen") { showAddProject = true }.buttonStyle(.borderedProminent)
-            }
-        } else {
-            ContentUnavailableView("Profil oder Projekt auswählen", systemImage: "sidebar.left")
         }
     }
 
@@ -117,10 +67,189 @@ struct ContentView: View {
                        title: "Claude-Code-CLI veraltet: \(model.outdatedCLIs.joined(separator: ", "))",
                        detail: "IntelliJ nutzt diese CLI. Unter \(model.minimumCLIVersion) gilt die Projektzuordnung nur beim Start direkt im Projektordner. Aktualisieren mit „claude update“.")
             }
+            if let update = model.availableUpdate {
+                Banner(kind: .info,
+                       title: "KeyZapper \(update.version) ist verfügbar (installiert: \(model.appVersion ?? "?"))",
+                       detail: model.isInstallingUpdate ? "Paket wird geladen und geprüft …" : "Die Installation benötigt Administratorrechte.",
+                       actions: [BannerAction(title: "Installieren") { Task { await model.installUpdate() } },
+                                 BannerAction(title: "Versionshinweise") { NSWorkspace.shared.open(update.pageURL) }])
+            }
             if let notice = model.notice {
                 Banner(kind: .info, title: notice) { model.notice = nil }
             }
         }
+    }
+}
+
+struct ProfileCard: View {
+    @Environment(AppModel.self) private var model
+    let profile: Profile
+    @ViewState private var editing = false
+    @ViewState private var replacingKey = false
+    @ViewState private var addingProject = false
+    @ViewState private var confirmDelete = false
+    @ViewState private var checking = false
+    @ViewState private var checkResult: GatewayCheckResult?
+
+    private var bindings: [WorkspaceBinding] { model.state.bindings.filter { $0.profileID == profile.id } }
+    private var hasKey: Bool { model.keyPresent[profile.id] == true }
+    private var isManaged: Bool { model.isManaged(profile.id) }
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 8) {
+                            Text(profile.name).font(.title3).fontWeight(.semibold)
+                            if isManaged {
+                                Text("Von der IT vorgegeben").font(.caption).foregroundStyle(.secondary)
+                                    .padding(.horizontal, 6).padding(.vertical, 1)
+                                    .background(Capsule().stroke(.secondary.opacity(0.4)))
+                            }
+                        }
+                        Text(profile.endpoint.absoluteString + (profile.modelAlias.isEmpty ? "" : " · Modell \(profile.modelAlias)"))
+                            .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                    }
+                    Spacer()
+                    Button("Bearbeiten") { editing = true }.disabled(isManaged)
+                    Button("Löschen", role: .destructive) { confirmDelete = true }.disabled(isManaged)
+                }
+
+                HStack {
+                    if hasKey {
+                        Label("Key \(model.keyHints[profile.id] ?? "hinterlegt")", systemImage: "key.fill")
+                            .foregroundStyle(.green).monospaced()
+                    } else {
+                        Label("Kein Key hinterlegt – Anfragen schlagen fehl", systemImage: "key.slash").foregroundStyle(.red)
+                    }
+                    Spacer()
+                    Button("Kopieren", systemImage: "doc.on.doc") { model.copyKey(profile) }.disabled(!hasKey)
+                    Button(hasKey ? "Ändern" : "Key hinterlegen", systemImage: "pencil") { replacingKey = true }
+                    Button("Verbindung prüfen") {
+                        checking = true
+                        checkResult = nil
+                        Task {
+                            checkResult = await model.testConnection(profile)
+                            checking = false
+                        }
+                    }
+                    .disabled(checking || !hasKey)
+                }
+                if checking { ProgressView().controlSize(.small) }
+                if let checkResult {
+                    let ok: Bool = { if case .ok(let available) = checkResult { return available != false } else { return false } }()
+                    Label(checkResult.message, systemImage: ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(ok ? .green : .orange)
+                }
+
+                Divider()
+                HStack {
+                    Text("Projekte").font(.headline)
+                    Spacer()
+                    Button("Projekt zuordnen …", systemImage: "folder.badge.plus") { addingProject = true }
+                }
+                if bindings.isEmpty {
+                    Text("Noch keinem Projekt zugeordnet.").foregroundStyle(.secondary)
+                } else {
+                    ForEach(bindings) { ProjectRow(binding: $0) }
+                }
+            }
+            .padding(8)
+        }
+        .sheet(isPresented: $editing) { ProfileEditor(existing: profile) }
+        .sheet(isPresented: $replacingKey) { ReplaceKeySheet(profile: profile) }
+        .sheet(isPresented: $addingProject) { AddProjectSheet(preselectedProfile: profile.id) }
+        .confirmationDialog("Profil „\(profile.name)“ löschen?", isPresented: $confirmDelete) {
+            Button("Löschen", role: .destructive) { model.deleteProfile(profile) }
+        } message: {
+            Text(bindings.isEmpty
+                 ? "Der Key wird aus dem Schlüsselbund entfernt."
+                 : "Der Key wird aus dem Schlüsselbund entfernt und \(bindings.count) Projektzuordnung(en) werden zurückgenommen.")
+        }
+        .onChange(of: profile) { checkResult = nil }
+    }
+}
+
+struct ProjectRow: View {
+    @Environment(AppModel.self) private var model
+    let binding: WorkspaceBinding
+    @ViewState private var confirmUnbind = false
+
+    var body: some View {
+        let status = model.statuses[binding.id]
+        let keyPresent = model.keyPresent[binding.profileID] == true
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                StatusIcon(status: status, keyPresent: keyPresent)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(AppModel.folderName(binding.path)).fontWeight(.medium)
+                    Text((binding.path as NSString).abbreviatingWithTildeInPath)
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                }
+                Spacer()
+                Picker("Profil", selection: Binding(get: { binding.profileID }, set: { model.bind(folder: binding.path, to: $0) })) {
+                    ForEach(model.state.profiles) { Text($0.name).tag($0.id) }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .help("Profil für dieses Projekt wechseln")
+                Button("Im Finder zeigen", systemImage: "folder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: binding.path)])
+                }
+                .labelStyle(.iconOnly)
+                Button("Erneut anwenden", systemImage: "arrow.triangle.2.circlepath") { model.reapply(binding) }
+                    .labelStyle(.iconOnly)
+                    .disabled(status?.health == .folderMissing)
+                    .help("Einstellungen erneut schreiben")
+                Button("Entfernen", systemImage: "trash", role: .destructive) { confirmUnbind = true }
+                    .labelStyle(.iconOnly)
+                    .help("Zuordnung entfernen")
+            }
+            if status?.health != .active || !keyPresent {
+                Text(Self.describe(status?.health, keyPresent: keyPresent))
+                    .font(.caption).foregroundStyle(StatusIcon.appearance(status, keyPresent: keyPresent).1)
+            }
+            ForEach(status?.conflicts ?? [], id: \.self) { conflict in
+                Label(conflict.message, systemImage: conflict.severity == .blocking ? "xmark.octagon" : "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(conflict.severity == .blocking ? .red : .orange)
+            }
+        }
+        .padding(.vertical, 4)
+        .confirmationDialog("Zuordnung für „\(AppModel.folderName(binding.path))“ entfernen?", isPresented: $confirmUnbind) {
+            Button("Entfernen", role: .destructive) { model.unbind(binding) }
+        } message: {
+            Text("Nur die von der App gesetzten Einträge werden aus .claude/settings.local.json entfernt. Andere Einstellungen bleiben erhalten.")
+        }
+    }
+
+    static func describe(_ health: BindingHealth?, keyPresent: Bool) -> String {
+        if !keyPresent && health == .active { return "Für das Profil ist kein Key hinterlegt – Claude-Anfragen schlagen fehl." }
+        switch health {
+        case .active: return "Aktiv"
+        case .notApplied: return "Nicht eingerichtet – „Erneut anwenden“ wählen."
+        case .drifted(let keys): return "Abweichung in \(keys.joined(separator: ", ")) – „Erneut anwenden“ wählen."
+        case .folderMissing: return "Ordner nicht gefunden (verschoben oder gelöscht). Zuordnung entfernen und neu zuordnen."
+        case nil: return "Status unbekannt"
+        }
+    }
+}
+
+struct VersionFooter: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("KeyZapper \(model.appVersion ?? "Entwicklungsversion")").foregroundStyle(.secondary)
+            if model.config.updateCheckEnabled {
+                Button("Nach Updates suchen") { Task { await model.checkForUpdates(userInitiated: true) } }
+                    .buttonStyle(.link)
+            } else {
+                Text("Updates über die IT").foregroundStyle(.secondary)
+            }
+            Link("Projektseite", destination: URL(string: "https://github.com/\(UpdateChecker.repository)")!)
+        }
+        .font(.caption)
     }
 }
 
@@ -145,7 +274,6 @@ struct Banner: View {
                 Text(title).fontWeight(kind == .warning ? .semibold : .regular)
                 if let detail { Text(detail).font(.callout).foregroundStyle(.secondary) }
             }
-            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .textSelection(.enabled)
             ForEach(actions.indices, id: \.self) { i in Button(actions[i].title, action: actions[i].action) }

@@ -26,9 +26,12 @@ public struct ManagedConfig: Equatable, Sendable {
     public var oneDriveBackup = false
     /// `BackupDirectory`: explicit backup folder (supports `~`); enables the backup on its own.
     public var backupDirectory: String?
+    /// `UpdateCheckEnabled`: in-app update check against GitHub releases (default on). Turn off when Intune
+    /// distributes a fixed version, otherwise Intune may reinstall it over a self-installed update.
+    public var updateCheckEnabled = true
 
     static let keys = ["ManagedProfiles", "AllowedGatewayHosts", "DefaultEndpoint", "DefaultModelAlias",
-                       "MinimumClaudeCodeVersion", "OneDriveBackup", "BackupDirectory"]
+                       "MinimumClaudeCodeVersion", "OneDriveBackup", "BackupDirectory", "UpdateCheckEnabled"]
 
     public init() {}
 
@@ -45,6 +48,7 @@ public struct ManagedConfig: Equatable, Sendable {
         minimumClaudeCodeVersion = values["MinimumClaudeCodeVersion"] as? String
         oneDriveBackup = values["OneDriveBackup"] as? Bool ?? false
         backupDirectory = values["BackupDirectory"] as? String
+        updateCheckEnabled = values["UpdateCheckEnabled"] as? Bool ?? true
     }
 
     public static func load(domain: String = ManagedConfig.domain) -> ManagedConfig {

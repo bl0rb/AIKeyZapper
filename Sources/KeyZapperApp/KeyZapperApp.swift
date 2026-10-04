@@ -17,6 +17,12 @@ struct KeyZapperApp: App {
                     NSApplication.shared.activate()
                 }
         }
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Nach Updates suchen …") { Task { await model.checkForUpdates(userInitiated: true) } }
+                    .disabled(!model.config.updateCheckEnabled)
+            }
+        }
     }
 }
 

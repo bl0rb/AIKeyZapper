@@ -19,7 +19,9 @@ Claude Code ──apiKeyHelper──▶ keyzapper-helper ──▶ macOS-Schlüs
 * Status je Projekt: aktiv, abweichend, Ordner fehlt, Key fehlt, Konflikte mit anderen Einstellungen.
 * Verbindungstest gegen LiteLLM (ungültiger oder gesperrter Key, Rate-Limit, Budget, Gateway nicht erreichbar).
 * Rücknahme entfernt nur die Einträge, die die App selbst gesetzt hat.
-* Steuerbar per Intune: vorgegebene Profile, Gateway-Allowlist, Standardwerte, CLI-Mindestversion, OneDrive-Backup.
+* Übersicht mit allen Profilen, maskierten Keys und zugeordneten Projekten. Alles lässt sich direkt ändern; Keys lassen sich kopieren und ersetzen.
+* Update-Prüfung gegen die GitHub-Releases mit Installation per Klick; die Version steht in der App und unter „Über KeyZapper“.
+* Steuerbar per Intune: vorgegebene Profile, Gateway-Allowlist, Standardwerte, CLI-Mindestversion, OneDrive-Backup, Update-Prüfung.
 
 ## Voraussetzungen
 
@@ -34,7 +36,13 @@ Claude Code ──apiKeyHelper──▶ keyzapper-helper ──▶ macOS-Schlüs
    samt Unterordnern und Worktrees. Claude Code liest die Projekteinstellungen nur am Root des Haupt-Checkouts.
 3. **Claude-Sitzung im Projekt neu starten**, in VS Code eine neue Unterhaltung bzw. das Fenster neu laden.
 
-**Keywechsel:** „Key ersetzen“ wirkt sofort für neue Sitzungen. Laufende Sitzungen übernehmen den Key nach Ablauf des
+Die Übersicht zeigt jedes Profil mit Endpunkt, Modell und dem zugewiesenen Key (maskiert, z. B. `••••7f3a`) samt allen
+zugeordneten Projekten. Pro Projekt lassen sich das Profil wechseln, die Einstellungen neu schreiben und die Zuordnung entfernen.
+
+**Key kopieren:** Der Key landet als „vertraulich“ markiert in der Zwischenablage, damit Clipboard-Manager ihn nicht speichern.
+Nach 60 Sekunden wird er wieder entfernt, sofern inzwischen nichts anderes kopiert wurde.
+
+**Keywechsel:** „Ändern“ ersetzt den Key; das wirkt sofort für neue Sitzungen. Laufende Sitzungen übernehmen den Key nach Ablauf des
 Helper-Caches (Standard 5 min), nach einem HTTP 401 oder nach einem Neustart.
 
 **Fehlt ein Key** oder ist er gesperrt, schlagen die Anfragen fehl. Claude Code weicht nie auf andere Zugangsdaten aus.
@@ -114,6 +122,7 @@ Schlüssel-Wert-Paare ohne `<plist>`/`<dict>`-Rahmen, wie Intune es verlangt.
 | `MinimumClaudeCodeVersion` | String | Schwelle für die Warnung vor veralteten Claude-CLIs (Standard 2.1.288) |
 | `OneDriveBackup` | Bool | Backup von Profilen und Zuordnungen nach OneDrive (siehe unten) |
 | `BackupDirectory` | String, `~` erlaubt | Expliziter Backup-Ordner; aktiviert das Backup auch ohne `OneDriveBackup` |
+| `UpdateCheckEnabled` | Bool (Standard `true`) | In-App-Update-Prüfung. Bei Verteilung über Intune auf `false` setzen, sonst kann Intune eine selbst installierte neuere Version wieder überschreiben. |
 
 Lokal testen (Benutzerebene; per Intune verwaltete Werte haben Vorrang):
 
@@ -127,6 +136,16 @@ Die App sichert Profile und Projektzuordnungen nach `~/Library/CloudStorage/OneD
 Ein Geschäftskonto hat Vorrang vor „OneDrive-Personal“. **Keys werden nie gesichert.** Auf einem neuen Mac bietet die App
 an, das Backup wiederherzustellen oder zu verwerfen. Zuordnungen werden nur für vorhandene Ordner übernommen, die Keys
 trägt man neu ein. Solange ein gefundenes Backup nicht wiederhergestellt oder verworfen wurde, wird es nicht überschrieben.
+
+## Updates und Version
+
+Beim Start prüft die App das neueste [GitHub-Release](https://github.com/bl0rb/AIKeyZapper/releases); manuell geht es über
+*KeyZapper › Nach Updates suchen …* oder die Versionszeile unten in der App. Ist eine neuere Version verfügbar, lädt
+„Installieren“ das `.pkg` herunter, prüft die von GitHub veröffentlichte SHA-256-Prüfsumme und öffnet den macOS-Installer.
+Dafür sind Administratorrechte nötig. Pakete werden nur von `github.com` geladen. Die installierte Version steht unten in der
+App und unter *KeyZapper › Über KeyZapper*.
+
+Unter Intune schaltet `UpdateCheckEnabled = false` die Prüfung ab. Updates kommen dann über ein neues Paket in Intune.
 
 ## Bekannte Einschränkungen
 
