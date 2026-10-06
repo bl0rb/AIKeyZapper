@@ -47,7 +47,7 @@ struct ContentView: View {
                 Button { showNewProfile = true } label: { Label("Neues Profil", systemImage: "plus") }
                 Button { showAddProject = true } label: { Label("Projekt zuordnen", systemImage: "folder.badge.plus") }
                     .disabled(model.state.profiles.isEmpty)
-                Button { model.refresh() } label: { Label("Status aktualisieren", systemImage: "arrow.clockwise") }
+                Button { model.refresh(); model.refreshBudgets() } label: { Label("Status aktualisieren", systemImage: "arrow.clockwise") }
                 Button { model.refresh(); showClaudeSettings = true } label: {
                     Label("Claude-Einstellungen prüfen", systemImage: "checkmark.shield")
                 }
@@ -174,6 +174,7 @@ struct ProfileCard: View {
 
                 HStack {
                     keyChip
+                    if hasKey, let budget = model.budgets[profile.id] { BudgetLabel(budget: budget) }
                     Spacer()
                     Button("Kopieren", systemImage: "doc.on.doc") { model.copyKey(profile) }
                         .disabled(!hasKey || !model.config.allowKeyExport)
@@ -291,7 +292,10 @@ struct ProjectRow: View {
                 if model.isDisabled {
                     Image(systemName: "pause.circle").foregroundStyle(.secondary)
                 } else {
+                    // Hidden: three clicks on the status icon switch the budget pool on or off.
                     StatusIcon(status: status, keyPresent: keyPresent)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 3) { model.togglePool(binding) }
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(AppModel.folderName(binding.path)).fontWeight(.medium)
@@ -317,6 +321,11 @@ struct ProjectRow: View {
                 Button("Entfernen", systemImage: "trash", role: .destructive) { confirmUnbind = true }
                     .labelStyle(.iconOnly)
                     .help("Zuordnung entfernen")
+            }
+            if binding.pooled == true && !model.isDisabled {
+                Label("Budget-Pool: nach dem Budget dieses Keys werden die Keys der anderen Profile am selben Gateway genutzt.",
+                      systemImage: "square.stack.3d.up")
+                    .font(.caption).foregroundStyle(.purple)
             }
             if model.isDisabled {
                 Text("Deaktiviert – Claude nutzt hier die normale Anmeldung.").font(.caption).foregroundStyle(.secondary)
@@ -346,6 +355,24 @@ struct ProjectRow: View {
         case .folderMissing: return L("Ordner nicht gefunden (verschoben oder gelöscht). Zuordnung entfernen und neu zuordnen.")
         case nil: return L("Status unbekannt")
         }
+    }
+}
+
+/// Remaining budget of a key, e.g. "Budget 6,79 $ von 10,00 $ übrig · Reset 01.11.2026".
+struct BudgetLabel: View {
+    let budget: KeyBudget
+
+    var body: some View {
+        let usd = FloatingPointFormatStyle<Double>.Currency(code: "USD")
+        let text: String
+        if let limit = budget.maxBudget {
+            text = L("Budget \(budget.remaining.formatted(usd)) von \(limit.formatted(usd)) übrig")
+                + (budget.resetAt.map { L(" · Reset \($0.formatted(date: .abbreviated, time: .omitted))") } ?? "")
+        } else {
+            text = L("Kein Budgetlimit · \(budget.spend.formatted(usd)) verbraucht")
+        }
+        let color: Color = budget.remaining <= 0 ? .red : budget.remaining < (budget.maxBudget ?? .infinity) * 0.1 ? .orange : .secondary
+        return Label(text, systemImage: "dollarsign.circle").font(.callout).foregroundStyle(color)
     }
 }
 

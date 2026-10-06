@@ -1,5 +1,11 @@
 # English translations, keyed by the German source strings in Sources/ (see scripts/l10n_keys.py).
 EN = {
+" · Reset %@": " · resets %@",
+"Budget %@ von %@ übrig": "Budget %@ of %@ left",
+"Kein Budgetlimit · %@ verbraucht": "No budget limit · %@ spent",
+"Budget-Pool: nach dem Budget dieses Keys werden die Keys der anderen Profile am selben Gateway genutzt.": "Budget pool: once this key's budget is used up, the keys of the other profiles on the same gateway are used.",
+"Budget-Pool für „%@“ aktiv: Ist das Budget von „%@“ verbraucht, nutzt Claude die Keys der anderen Profile am selben Gateway. Laufende Claude-Sitzungen bitte neu starten.": "Budget pool for “%@” is on: once the budget of “%@” is used up, Claude uses the keys of the other profiles on the same gateway. Please restart running Claude sessions.",
+"Budget-Pool für „%@“ beendet: Claude nutzt nur noch den Key von „%@“. Laufende Claude-Sitzungen bitte neu starten.": "Budget pool for “%@” is off: Claude only uses the key of “%@” again. Please restart running Claude sessions.",
 " · Modell %@": " · model %@",
 "%@ (%@) setzen „%@“; die Projektzuordnung hat Vorrang.": "%@ (%@) set “%@”; the project assignment takes precedence.",
 "%@ (%@): „%@“ leitet Claude Code an LiteLLM vorbei.": "%@ (%@): “%@” routes Claude Code around LiteLLM.",
@@ -16,7 +22,7 @@ EN = {
 "Abweichung in %@ – „Erneut anwenden“ wählen.": "Differs in %@ – choose “Reapply”.",
 "Aktiv": "Active",
 "Anlegen": "Create",
-"Aufruf: %@ credential|store|status|delete --profile <UUID>": "Usage: %@ credential|store|status|delete --profile <UUID>",
+"Aufruf: %@ credential|pool|store|status|delete --profile <UUID>": "Usage: %@ credential|pool|store|status|delete --profile <UUID>",
 "Auswählen …": "Choose…",
 "Backup wiederhergestellt: %@ Profil(e), %@ Projekt(e)": "Backup restored: %@ profile(s), %@ project(s)",
 "Bearbeiten": "Edit",

@@ -9,7 +9,8 @@ final class StubGateway: URLProtocol {
     override func startLoading() {
         let key = request.value(forHTTPHeaderField: "x-api-key")
         let ok = key == "sk-good" && request.value(forHTTPHeaderField: "Authorization") == "Bearer sk-good"
-        let body = ok ? #"{"data":[{"id":"eu.anthropic.claude-sonnet-5-iti-cs"},{"id":"eu.anthropic.claude-opus-5-iti-cs"}]}"# : #"{"error":"invalid key"}"#
+        let info = #"{"key":"sk-good","info":{"spend":2.5,"max_budget":10.0,"budget_reset_at":"2026-11-01T00:00:00.123456+00:00"}}"#
+        let body = ok && request.url!.path.hasSuffix("/key/info") ? info : ok ? #"{"data":[{"id":"eu.anthropic.claude-sonnet-5-iti-cs"},{"id":"eu.anthropic.claude-opus-5-iti-cs"}]}"# : #"{"error":"invalid key"}"#
         let response = HTTPURLResponse(url: request.url!, statusCode: ok ? 200 : 401, httpVersion: nil, headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(body.utf8))
@@ -41,5 +42,16 @@ struct GatewayCheckTests {
         #expect(complete.isSuccess)
         let rejected = await GatewayCheck.run(endpoint: endpoint, key: "sk-bad", models: [], session: session)
         #expect(rejected == .unauthorized)
+    }
+
+    @Test func readsKeyBudget() async throws {
+        let budget = try await GatewayCheck.budget(endpoint: endpoint, key: "sk-good", session: session).get()
+        #expect(budget == KeyBudget(spend: 2.5, maxBudget: 10, resetAt: Date(timeIntervalSince1970: 1_793_491_200)))
+        #expect(budget.remaining == 7.5)
+        #expect(KeyBudget(spend: 3, maxBudget: nil).remaining == .infinity)
+        #expect(KeyBudget(spend: 12, maxBudget: 10).remaining == 0)
+        let rejected = await GatewayCheck.budget(endpoint: endpoint, key: "sk-bad", session: session)
+        #expect(rejected == .failure(GatewayFailure(result: .unauthorized)))
+        #expect(GatewayCheck.parseDate("2026-11-01T00:00:00") == Date(timeIntervalSince1970: 1_793_491_200))
     }
 }

@@ -18,6 +18,14 @@ struct ModelSettingsTests {
         #expect(profile.configuredModels == ["eu.opus-iti", "eu.sonnet-iti"])
     }
 
+    @Test func poolModeUsesPoolHelperWithShortCache() {
+        let binder = ClaudeSettingsBinder(helperPath: "/h", managedSettingsPaths: [])
+        let pooled = binder.desiredValues(for: sampleProfile, pooled: true)
+        #expect(pooled["apiKeyHelper"] == "'/h' pool --profile \(sampleProfile.id.uuidString)")
+        #expect(pooled["env.CLAUDE_CODE_API_KEY_HELPER_TTL_MS"] == "60000")
+        #expect(binder.desiredValues(for: sampleProfile)["env.CLAUDE_CODE_API_KEY_HELPER_TTL_MS"] == nil)
+    }
+
     @Test func parsesEnvironmentLines() {
         let parsed = Profile.parseEnvironment("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1\n# comment\n\nFOO = a=b\nANTHROPIC_BASE_URL=x\nnot valid\n1BAD=2")
         #expect(parsed.values == ["CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1", "FOO": "a=b"])

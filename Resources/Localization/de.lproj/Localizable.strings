@@ -2,6 +2,7 @@
 " %@ Eintrag/Einträge übersprungen (Ordner fehlt, Konflikt oder nicht freigegebener Endpunkt)." = " %@ Eintrag/Einträge übersprungen (Ordner fehlt, Konflikt oder nicht freigegebener Endpunkt).";
 " Sicherung: %@" = " Sicherung: %@";
 " · Modell %@" = " · Modell %@";
+" · Reset %@" = " · Reset %@";
 "%@ (%@) setzen „%@“; die Projektzuordnung hat Vorrang." = "%@ (%@) setzen „%@“; die Projektzuordnung hat Vorrang.";
 "%@ (%@) sind kein gültiges JSON; Claude Code ignoriert die Datei." = "%@ (%@) sind kein gültiges JSON; Claude Code ignoriert die Datei.";
 "%@ (%@): „%@“ leitet Claude Code an LiteLLM vorbei." = "%@ (%@): „%@“ leitet Claude Code an LiteLLM vorbei.";
@@ -21,7 +22,7 @@
 "Aktiv" = "Aktiv";
 "Aktivieren" = "Aktivieren";
 "Anlegen" = "Anlegen";
-"Aufruf: %@ credential|store|status|delete --profile <UUID>" = "Aufruf: %@ credential|store|status|delete --profile <UUID>";
+"Aufruf: %@ credential|pool|store|status|delete --profile <UUID>" = "Aufruf: %@ credential|pool|store|status|delete --profile <UUID>";
 "Auswählen …" = "Auswählen …";
 "Backup" = "Backup";
 "Backup exportieren" = "Backup exportieren";
@@ -36,7 +37,11 @@
 "Bereits Profil „%@“ zugeordnet – wird umgestellt." = "Bereits Profil „%@“ zugeordnet – wird umgestellt.";
 "Bitte eine vollständige http(s)-URL angeben." = "Bitte eine vollständige http(s)-URL angeben.";
 "Bitte wählen" = "Bitte wählen";
+"Budget %@ von %@ übrig" = "Budget %@ von %@ übrig";
 "Budget dieses Keys ist ausgeschöpft." = "Budget dieses Keys ist ausgeschöpft.";
+"Budget-Pool für „%@“ aktiv: Ist das Budget von „%@“ verbraucht, nutzt Claude die Keys der anderen Profile am selben Gateway. Laufende Claude-Sitzungen bitte neu starten." = "Budget-Pool für „%@“ aktiv: Ist das Budget von „%@“ verbraucht, nutzt Claude die Keys der anderen Profile am selben Gateway. Laufende Claude-Sitzungen bitte neu starten.";
+"Budget-Pool für „%@“ beendet: Claude nutzt nur noch den Key von „%@“. Laufende Claude-Sitzungen bitte neu starten." = "Budget-Pool für „%@“ beendet: Claude nutzt nur noch den Key von „%@“. Laufende Claude-Sitzungen bitte neu starten.";
+"Budget-Pool: nach dem Budget dieses Keys werden die Keys der anderen Profile am selben Gateway genutzt." = "Budget-Pool: nach dem Budget dieses Keys werden die Keys der anderen Profile am selben Gateway genutzt.";
 "Claude Code" = "Claude Code";
 "Claude Code holt in jedem zugeordneten Projekt den passenden Key automatisch über den Helper – kein manuelles Wechseln nötig. Nach neuen Zuordnungen die Claude-Sitzung einmal neu starten." = "Claude Code holt in jedem zugeordneten Projekt den passenden Key automatisch über den Helper – kein manuelles Wechseln nötig. Nach neuen Zuordnungen die Claude-Sitzung einmal neu starten.";
 "Claude Code nutzt in allen Projekten die normale Anmeldung. Die Zuordnungen bleiben gespeichert." = "Claude Code nutzt in allen Projekten die normale Anmeldung. Die Zuordnungen bleiben gespeichert.";
@@ -103,6 +108,7 @@
 "Installieren" = "Installieren";
 "IntelliJ nutzt diese CLI. Unter %@ gilt die Projektzuordnung nur beim Start direkt im Projektordner. Aktualisieren mit „claude update“." = "IntelliJ nutzt diese CLI. Unter %@ gilt die Projektzuordnung nur beim Start direkt im Projektordner. Aktualisieren mit „claude update“.";
 "Jedes Projekt nutzt seinen eigenen Key, gleichzeitig und unabhängig voneinander." = "Jedes Projekt nutzt seinen eigenen Key, gleichzeitig und unabhängig voneinander.";
+"Kein Budgetlimit · %@ verbraucht" = "Kein Budgetlimit · %@ verbraucht";
 "Kein Key hinterlegt – Anfragen schlagen fehl" = "Kein Key hinterlegt – Anfragen schlagen fehl";
 "Kein Ordner gewählt" = "Kein Ordner gewählt";
 "Kein gültiges JSON: Claude Code ignoriert die Datei, und das Speichern der Modellauswahl schlägt fehl." = "Kein gültiges JSON: Claude Code ignoriert die Datei, und das Speichern der Modellauswahl schlägt fehl.";

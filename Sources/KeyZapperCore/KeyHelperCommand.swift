@@ -3,12 +3,15 @@ import Foundation
 /// Contract between Claude Code / the app and `keyzapper-helper`.
 ///
 ///     keyzapper-helper credential --profile <UUID>   # key on stdout (no newline), used as apiKeyHelper
+///     keyzapper-helper pool       --profile <UUID>   # like credential; once its budget is used up, the key with
+///                                                    # the most budget left on the same endpoint (hidden pool mode)
 ///     keyzapper-helper store      --profile <UUID>   # key on stdin (never as argument)
 ///     keyzapper-helper status     --profile <UUID>   # exit 0 if a key exists, 66 if not
 ///     keyzapper-helper delete     --profile <UUID>
 ///
 /// Keys are only released for endpoints allowed by `ManagedConfig.allowedGatewayHosts` (exit 78 otherwise).
-/// Messages go to stderr and never contain key material. A failure never falls back to another profile.
+/// Messages go to stderr and never contain key material. A failure never falls back to another profile;
+/// only `pool` switches to other profiles' keys, and only when the gateway reports the own budget as used up.
 public enum HelperExitCode: Int32, Sendable {
     case ok = 0
     case usage = 64
@@ -31,21 +34,26 @@ public struct KeyHelperCommand {
     let metadata: MetadataStore
     let store: CredentialStore
     let config: ManagedConfig
+    /// Remaining budget of a key at an endpoint (nil = unknown), used by `pool`.
+    let remainingBudget: (URL, String) -> Double?
 
-    public init(metadata: MetadataStore, store: CredentialStore, config: ManagedConfig = ManagedConfig()) {
+    public init(metadata: MetadataStore, store: CredentialStore, config: ManagedConfig = ManagedConfig(),
+                remainingBudget: @escaping (URL, String) -> Double? = { GatewayCheck.remainingBudget(endpoint: $0, key: $1) }) {
         self.metadata = metadata
         self.store = store
         self.config = config
+        self.remainingBudget = remainingBudget
     }
 
     public func run(_ args: [String], stdin: () -> String) -> Output {
-        guard args.count == 3, args[1] == "--profile", ["credential", "store", "status", "delete"].contains(args[0]) else {
-            return fail(.usage, L("Aufruf: \(Self.executableName) credential|store|status|delete --profile <UUID>"))
+        guard args.count == 3, args[1] == "--profile", ["credential", "pool", "store", "status", "delete"].contains(args[0]) else {
+            return fail(.usage, L("Aufruf: \(Self.executableName) credential|pool|store|status|delete --profile <UUID>"))
         }
         guard let id = UUID(uuidString: args[2]) else { return fail(.unknownProfile, L("Ungültige Profil-ID: \(args[2])")) }
-        let profile: Profile
+        let profile: Profile, state: AppState
         do {
-            guard let p = try metadata.load().profile(id) else {
+            state = try metadata.load()
+            guard let p = state.profile(id) else {
                 if args[0] == "delete" { return deleteOrphan(id) }
                 return fail(.unknownProfile, L("Unbekanntes Profil: \(id.uuidString)"))
             }
@@ -53,13 +61,15 @@ public struct KeyHelperCommand {
         } catch {
             return fail(.configError, error.localizedDescription)
         }
-        if ["credential", "store"].contains(args[0]) && !config.isEndpointAllowed(profile.endpoint) {
+        if ["credential", "pool", "store"].contains(args[0]) && !config.isEndpointAllowed(profile.endpoint) {
             return fail(.configError, L("Endpunkt \(profile.endpoint.host() ?? "?") ist laut Firmenrichtlinie (AllowedGatewayHosts) nicht freigegeben."))
         }
         do {
             switch args[0] {
             case "credential":
                 return Output(exitCode: .ok, stdout: try store.read(profile.keychainReference), stderr: "")
+            case "pool":
+                return Output(exitCode: .ok, stdout: try pooledKey(for: profile, in: state), stderr: "")
             case "store":
                 let secret = stdin().trimmingCharacters(in: .whitespacesAndNewlines)
                 try store.write(secret, label: "KeyZapper – \(profile.name)", for: profile.keychainReference)
@@ -77,6 +87,28 @@ public struct KeyHelperCommand {
         } catch {
             return fail(.internalError, error.localizedDescription)
         }
+    }
+
+    /// The profile's own key while it has budget left or its budget is unknown, otherwise the key with the most
+    /// budget left among the other profiles on the same endpoint (same models and allowlist).
+    func pooledKey(for profile: Profile, in state: AppState) throws -> String {
+        let own = try store.read(profile.keychainReference)
+        guard let ownLeft = remainingBudget(profile.endpoint, own), ownLeft <= 0 else { return own }
+        var best: (key: String, left: Double)?
+        for other in state.profiles where other.id != profile.id && Self.sameEndpoint(other.endpoint, profile.endpoint) {
+            guard let key = try? store.read(other.keychainReference), let left = remainingBudget(other.endpoint, key),
+                  left > (best?.left ?? 0) else { continue }
+            best = (key, left)
+        }
+        return best?.key ?? own
+    }
+
+    static func sameEndpoint(_ a: URL, _ b: URL) -> Bool {
+        func trimmed(_ url: URL) -> Substring {
+            let s = url.absoluteString
+            return s[..<(s.lastIndex { $0 != "/" }.map(s.index(after:)) ?? s.startIndex)]
+        }
+        return trimmed(a) == trimmed(b)
     }
 
     /// Profile already removed from metadata: still allow cleaning up its keychain item.

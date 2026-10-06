@@ -110,6 +110,8 @@ public struct WorkspaceBinding: Codable, Identifiable, Hashable, Sendable {
     public var managedValues: [String: String]
     /// Line the app appended to `<git-common-dir>/info/exclude`, if any.
     public var gitExcludeEntry: String?
+    /// Hidden pool mode: once the profile's budget is used up, the helper hands out other keys on the same endpoint.
+    public var pooled: Bool? = nil
 
     public init(id: UUID = UUID(), path: String, profileID: UUID, managedValues: [String: String] = [:], gitExcludeEntry: String? = nil) {
         self.id = id

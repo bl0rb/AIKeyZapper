@@ -46,6 +46,8 @@ final class AppModel {
     private(set) var keyPresent: [UUID: Bool] = [:]
     /// Masked key per profile (`••••` + last 4 characters) so the assignment is visible; never the full key.
     private(set) var keyHints: [UUID: String] = [:]
+    /// Budget per profile as reported by the gateway; missing while unknown (no key, gateway unreachable).
+    private(set) var budgets: [UUID: KeyBudget] = [:]
     private(set) var availableUpdate: ReleaseInfo?
     /// Findings of the logical check of `~/.claude/settings.json`.
     private(set) var globalFindings: [SettingsFinding] = []
@@ -92,6 +94,7 @@ final class AppModel {
         }
         syncManagedProfiles()
         refresh()
+        refreshBudgets()
         let minimum = minimumCLIVersion
         Task { await checkForUpdates(userInitiated: false) }
         Task {
@@ -178,6 +181,20 @@ final class AppModel {
 
     nonisolated static func maskedHint(_ key: String) -> String { "••••" + String(key.suffix(4)) }
 
+    /// Loads the budget of every stored key from the gateway (LiteLLM `/key/info`).
+    func refreshBudgets() {
+        for profile in state.profiles { refreshBudget(profile) }
+    }
+
+    func refreshBudget(_ profile: Profile) {
+        guard let helper else { return }
+        Task {
+            let result = await Task.detached { helper.run("credential", profile.id) }.value
+            guard result.code == HelperExitCode.ok.rawValue else { budgets[profile.id] = nil; return }
+            budgets[profile.id] = try? await GatewayCheck.budget(endpoint: profile.endpoint, key: result.stdout).get()
+        }
+    }
+
     // MARK: Profiles
 
     @discardableResult
@@ -203,6 +220,7 @@ final class AppModel {
         let result = helper.run("store", profile.id, stdin: key)
         if result.code == HelperExitCode.ok.rawValue {
             keyHints[profile.id] = Self.maskedHint(key.trimmingCharacters(in: .whitespacesAndNewlines))
+            refreshBudget(profile)
             notice = L("Key für „\(profile.name)“ gespeichert. Neue Claude-Sitzungen verwenden ihn sofort, laufende nach Ablauf des Helper-Caches (Standard 5 min), nach einem 401 oder nach Neustart.")
         } else {
             errorMessage = result.message
@@ -291,6 +309,7 @@ final class AppModel {
         guard let helper else { return nil }
         let result = await Task.detached { helper.run("credential", profile.id) }.value
         guard result.code == HelperExitCode.ok.rawValue else { errorMessage = result.message; return nil }
+        refreshBudget(profile)
         return await GatewayCheck.run(endpoint: profile.endpoint, key: result.stdout, models: profile.configuredModels)
     }
 
@@ -332,6 +351,17 @@ final class AppModel {
         refresh()
     }
 
+    /// Hidden: switches a project between its own key and the pool of all keys on the same endpoint.
+    func togglePool(_ binding: WorkspaceBinding) {
+        guard let profile = state.profile(binding.profileID) else { return }
+        let pooled = binding.pooled != true
+        guard apply(profile, folder: binding.path, previous: binding, pooled: pooled) else { return }
+        notice = pooled
+            ? L("Budget-Pool für „\(Self.folderName(binding.path))“ aktiv: Ist das Budget von „\(profile.name)“ verbraucht, nutzt Claude die Keys der anderen Profile am selben Gateway. Laufende Claude-Sitzungen bitte neu starten.")
+            : L("Budget-Pool für „\(Self.folderName(binding.path))“ beendet: Claude nutzt nur noch den Key von „\(profile.name)“. Laufende Claude-Sitzungen bitte neu starten.")
+        refresh()
+    }
+
     @discardableResult
     func unbind(_ binding: WorkspaceBinding) -> Bool {
         guard let binder else { return false }
@@ -351,14 +381,14 @@ final class AppModel {
     }
 
     @discardableResult
-    private func apply(_ profile: Profile, folder: String, previous: WorkspaceBinding?) -> Bool {
+    private func apply(_ profile: Profile, folder: String, previous: WorkspaceBinding?, pooled: Bool? = nil) -> Bool {
         guard let binder else { return false }
         guard !isDisabled else {
             errorMessage = L("KeyZapper ist deaktiviert. Bitte zuerst wieder aktivieren.")
             return false
         }
         do {
-            let result = try binder.apply(profile: profile, folder: folder, previous: previous)
+            let result = try binder.apply(profile: profile, folder: folder, previous: previous, pooled: pooled ?? (previous?.pooled == true))
             if let i = state.bindings.firstIndex(where: { $0.id == result.binding.id }) { state.bindings[i] = result.binding } else { state.bindings.append(result.binding) }
             persist()
             notice = result.changed

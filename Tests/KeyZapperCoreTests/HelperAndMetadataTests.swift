@@ -72,6 +72,29 @@ struct KeyHelperCommandTests {
         #expect(run(["status", "--profile", sampleProfile.id.uuidString]).exitCode == .missingCredential)
     }
 
+    @Test func poolFallsBackToKeyWithMostBudgetOnSameEndpoint() throws {
+        let sibling = Profile(name: "Gamma", endpoint: URL(string: "https://litellm.example.test")!, modelAlias: "")
+        let third = Profile(name: "Delta", endpoint: URL(string: "https://litellm.example.test/")!, modelAlias: "")
+        try metadata.save(AppState(profiles: [sampleProfile, otherProfile, sibling, third]))
+        store.items[sibling.id.uuidString] = "sk-gamma"
+        store.items[third.id.uuidString] = "sk-delta"
+        var left: [String: Double] = ["sk-alpha": 1, "sk-beta": 100, "sk-gamma": 5, "sk-delta": 8]
+        func pool() -> String {
+            KeyHelperCommand(metadata: metadata, store: store, remainingBudget: { left[$1] })
+                .run(["pool", "--profile", sampleProfile.id.uuidString]) { "" }.stdout
+        }
+        #expect(pool() == "sk-alpha")
+        left["sk-alpha"] = 0
+        #expect(pool() == "sk-delta")  // sk-beta has more, but another endpoint
+        left["sk-delta"] = nil
+        #expect(pool() == "sk-gamma")  // unknown budgets of other keys are skipped
+        left["sk-gamma"] = 0
+        #expect(pool() == "sk-alpha")  // nothing left anywhere: own key, the gateway reports the budget error
+        left["sk-alpha"] = nil
+        left["sk-gamma"] = 5
+        #expect(pool() == "sk-alpha")  // own budget unknown (gateway unreachable): own key
+    }
+
     @Test func unreadableMetadataIsConfigError() throws {
         try Data(#"{"schemaVersion":42}"#.utf8).write(to: metadata.fileURL)
         #expect(run(["credential", "--profile", sampleProfile.id.uuidString]).exitCode == .configError)

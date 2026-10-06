@@ -32,7 +32,52 @@ public enum GatewayCheckResult: Equatable, Sendable {
 public enum GatewayCheck {
     /// Model IDs available to the key, or the failure as a check result.
     public static func models(endpoint: URL, key: String, session: URLSession = .shared) async -> Result<[String], GatewayFailure> {
-        var request = URLRequest(url: endpoint.appendingPathComponent("v1/models"), timeoutInterval: 10)
+        await get("v1/models", endpoint: endpoint, key: key, timeout: 10, session: session).map { data in
+            struct Models: Decodable { struct Model: Decodable { var id: String }; var data: [Model] }
+            return ((try? JSONDecoder().decode(Models.self, from: data))?.data.map(\.id) ?? []).sorted()
+        }
+    }
+
+    /// LiteLLM's `GET /key/info` without `key` parameter describes the calling key: spend, limit and next reset.
+    public static func budget(endpoint: URL, key: String, timeout: TimeInterval = 10,
+                              session: URLSession = .shared) async -> Result<KeyBudget, GatewayFailure> {
+        await get("key/info", endpoint: endpoint, key: key, timeout: timeout, session: session).flatMap { data in
+            struct Response: Decodable {
+                struct Info: Decodable { var spend: Double?; var max_budget: Double?; var budget_reset_at: String? }
+                var info: Info
+            }
+            guard let info = try? JSONDecoder().decode(Response.self, from: data).info else {
+                return .failure(GatewayFailure(result: .httpError(200)))
+            }
+            return .success(KeyBudget(spend: info.spend ?? 0, maxBudget: info.max_budget, resetAt: info.budget_reset_at.flatMap(parseDate)))
+        }
+    }
+
+    /// Synchronous remaining budget for `keyzapper-helper`: nil if unknown, 0 if exhausted, `.infinity` without limit.
+    public static func remainingBudget(endpoint: URL, key: String) -> Double? {
+        final class Box: @unchecked Sendable { var value: Double? }
+        let box = Box(), done = DispatchSemaphore(value: 0)
+        Task {
+            switch await budget(endpoint: endpoint, key: key, timeout: 5) {
+            case .success(let budget): box.value = budget.remaining
+            case .failure(let failure): box.value = failure.result == .budgetExceeded ? 0 : nil
+            }
+            done.signal()
+        }
+        done.wait()
+        return box.value
+    }
+
+    /// LiteLLM writes Python ISO dates, e.g. `2026-11-01T00:00:00.123456+00:00`, sometimes without zone (UTC).
+    static func parseDate(_ text: String) -> Date? {
+        var value = text.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)
+        if value.range(of: #"(Z|[+-]\d\d:?\d\d)$"#, options: .regularExpression) == nil { value += "Z" }
+        return ISO8601DateFormatter().date(from: value)
+    }
+
+    private static func get(_ path: String, endpoint: URL, key: String, timeout: TimeInterval,
+                            session: URLSession) async -> Result<Data, GatewayFailure> {
+        var request = URLRequest(url: endpoint.appendingPathComponent(path), timeoutInterval: timeout)
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.setValue(key, forHTTPHeaderField: "x-api-key")
         let data: Data, response: URLResponse
@@ -42,9 +87,7 @@ public enum GatewayCheck {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         let body = String(decoding: data, as: UTF8.self).lowercased()
         switch status {
-        case 200:
-            struct Models: Decodable { struct Model: Decodable { var id: String }; var data: [Model] }
-            return .success(((try? JSONDecoder().decode(Models.self, from: data))?.data.map(\.id) ?? []).sorted())
+        case 200: return .success(data)
         case 401, 403: return .failure(GatewayFailure(result: .unauthorized))
         case 429: return .failure(GatewayFailure(result: body.contains("budget") ? .budgetExceeded : .rateLimited))
         case 400 where body.contains("budget"): return .failure(GatewayFailure(result: .budgetExceeded))
@@ -65,6 +108,17 @@ public enum GatewayCheck {
 
 public struct GatewayFailure: Error, Equatable, Sendable {
     public var result: GatewayCheckResult
+}
+
+/// Budget of a LiteLLM key in USD, as reported by `/key/info`.
+public struct KeyBudget: Equatable, Sendable {
+    public var spend: Double
+    /// Nil when the key has no budget limit.
+    public var maxBudget: Double?
+    public var resetAt: Date?
+
+    /// Remaining budget; `.infinity` without a limit.
+    public var remaining: Double { maxBudget.map { max(0, $0 - spend) } ?? .infinity }
 }
 
 /// Detects installed `claude` CLIs (used by the JetBrains integration) older than the tested version.

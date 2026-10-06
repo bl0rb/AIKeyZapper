@@ -46,16 +46,18 @@ public struct ClaudeSettingsBinder {
 
     /// The values the app owns for a profile. `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` are set to "" to
     /// neutralise values inherited from the IDE/shell environment (otherwise headers get mixed, spike T6/T7/T12).
-    public func desiredValues(for profile: Profile) -> [String: String] {
+    /// In pool mode the helper is asked every minute, so an exhausted key is replaced quickly.
+    public func desiredValues(for profile: Profile, pooled: Bool = false) -> [String: String] {
         var endpoint = profile.endpoint.absoluteString
         while endpoint.hasSuffix("/") { endpoint.removeLast() }
         var values = [
-            "apiKeyHelper": "\(Self.shellQuote(helperPath)) credential --profile \(profile.id.uuidString)",
+            "apiKeyHelper": "\(Self.shellQuote(helperPath)) \(pooled ? "pool" : "credential") --profile \(profile.id.uuidString)",
             "env.ANTHROPIC_BASE_URL": endpoint,
             "env.ANTHROPIC_API_KEY": "",
             "env.ANTHROPIC_AUTH_TOKEN": "",
         ]
         for (name, value) in profile.modelEnvironment { values["env." + name] = value }
+        if pooled { values["env.CLAUDE_CODE_API_KEY_HELPER_TTL_MS"] = "60000" }
         for (name, value) in profile.environment ?? [:] where Profile.isAllowedEnvironmentName(name) {
             values["env." + name] = value
         }
@@ -80,13 +82,13 @@ public struct ClaudeSettingsBinder {
         public var warnings: [SettingsConflict]
     }
 
-    public func apply(profile: Profile, folder: String, previous: WorkspaceBinding?) throws -> ApplyResult {
+    public func apply(profile: Profile, folder: String, previous: WorkspaceBinding?, pooled: Bool = false) throws -> ApplyResult {
         let root = canonicalPath(folder)
         guard Self.isDirectory(root) else { throw KeyZapperError.folderNotFound(root) }
         let expected = Self.settingsRoot(for: root)
         guard expected == root else { throw KeyZapperError.notSettingsRoot(folder: root, root: expected) }
 
-        let desired = desiredValues(for: profile)
+        let desired = desiredValues(for: profile, pooled: pooled)
         let previousValues = previous?.managedValues ?? [:]
         let outer = environmentConflicts(root: root)
         if outer.contains(where: { $0.severity == .blocking }) {
@@ -103,8 +105,9 @@ public struct ClaudeSettingsBinder {
             }
         }
         let exclude = try ensureGitExcluded(root: root) ?? previous?.gitExcludeEntry
-        let binding = WorkspaceBinding(id: previous?.id ?? UUID(), path: root, profileID: profile.id,
+        var binding = WorkspaceBinding(id: previous?.id ?? UUID(), path: root, profileID: profile.id,
                                        managedValues: desired, gitExcludeEntry: exclude)
+        binding.pooled = pooled ? true : nil
         return ApplyResult(binding: binding, changed: changed, warnings: outer)
     }
 
@@ -230,7 +233,7 @@ public struct ClaudeSettingsBinder {
             conflicts.append(SettingsConflict(.blocking, L("\(Self.localSettingsPath) ist kein gültiges JSON.")))
             return BindingStatus(health: .drifted([]), conflicts: conflicts)
         }
-        let desired = desiredValues(for: profile)
+        let desired = desiredValues(for: profile, pooled: binding.pooled == true)
         let differing = desired.filter { settings.stringValue(at: $0.key) != $0.value }.keys.sorted()
         let health: BindingHealth
         if differing.isEmpty { health = .active }

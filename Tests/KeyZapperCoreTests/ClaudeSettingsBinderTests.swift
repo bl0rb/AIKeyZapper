@@ -34,6 +34,17 @@ struct ClaudeSettingsBinderTests {
         #expect(binder.inspect(first.binding, profile: sampleProfile).health == .active)
     }
 
+    @Test func togglesPoolModeAndRemovesItsCacheSettingAgain() throws {
+        let pooled = try binder.apply(profile: sampleProfile, folder: root, previous: nil, pooled: true)
+        #expect(pooled.binding.pooled == true)
+        #expect((readJSON(settingsPath)?["apiKeyHelper"] as? String)?.hasSuffix("pool --profile \(sampleProfile.id.uuidString)") == true)
+        #expect(binder.inspect(pooled.binding, profile: sampleProfile).health == .active)
+        let plain = try binder.apply(profile: sampleProfile, folder: root, previous: pooled.binding)
+        #expect(plain.binding.pooled == nil)
+        #expect((readJSON(settingsPath)?["env"] as? [String: String])?["CLAUDE_CODE_API_KEY_HELPER_TTL_MS"] == nil)
+        #expect(binder.inspect(plain.binding, profile: sampleProfile).health == .active)
+    }
+
     @Test func helperCommandSurvivesSpacesAndQuotesInPath() throws {
         let dir = makeTempDir("helper dir's")
         let helper = dir + "/keyzapper-helper"
