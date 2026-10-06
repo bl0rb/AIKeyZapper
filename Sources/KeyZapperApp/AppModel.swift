@@ -351,14 +351,23 @@ final class AppModel {
         refresh()
     }
 
-    /// Hidden: switches a project between its own key and the pool of all keys on the same endpoint.
+    /// Projects whose Budget-Killer may burn this profile's key: pooled bindings of other profiles on the same endpoint.
+    func budgetKillers(burning profile: Profile) -> [WorkspaceBinding] {
+        guard !isDisabled else { return [] }
+        return state.bindings.filter { binding in
+            binding.pooled == true && binding.profileID != profile.id
+                && state.profile(binding.profileID).map { KeyHelperCommand.sameEndpoint($0.endpoint, profile.endpoint) } == true
+        }
+    }
+
+    /// Hidden Budget-Killer: switches a project between its own key and the pool of all keys on the same endpoint.
     func togglePool(_ binding: WorkspaceBinding) {
         guard let profile = state.profile(binding.profileID) else { return }
         let pooled = binding.pooled != true
         guard apply(profile, folder: binding.path, previous: binding, pooled: pooled) else { return }
         notice = pooled
-            ? L("Budget-Pool für „\(Self.folderName(binding.path))“ aktiv: Ist das Budget von „\(profile.name)“ verbraucht, nutzt Claude die Keys der anderen Profile am selben Gateway. Laufende Claude-Sitzungen bitte neu starten.")
-            : L("Budget-Pool für „\(Self.folderName(binding.path))“ beendet: Claude nutzt nur noch den Key von „\(profile.name)“. Laufende Claude-Sitzungen bitte neu starten.")
+            ? L("Budget-Killer für „\(Self.folderName(binding.path))“ aktiv: Ist das Budget von „\(profile.name)“ verbraucht, verbrennt Claude die Keys der anderen Profile am selben Gateway. Laufende Claude-Sitzungen bitte neu starten.")
+            : L("Budget-Killer für „\(Self.folderName(binding.path))“ aus: Claude nutzt nur noch den Key von „\(profile.name)“. Laufende Claude-Sitzungen bitte neu starten.")
         refresh()
     }
 

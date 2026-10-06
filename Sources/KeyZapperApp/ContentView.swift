@@ -174,7 +174,6 @@ struct ProfileCard: View {
 
                 HStack {
                     keyChip
-                    if hasKey, let budget = model.budgets[profile.id] { BudgetLabel(budget: budget) }
                     Spacer()
                     Button("Kopieren", systemImage: "doc.on.doc") { model.copyKey(profile) }
                         .disabled(!hasKey || !model.config.allowKeyExport)
@@ -189,6 +188,13 @@ struct ProfileCard: View {
                         }
                     }
                     .disabled(checking || !hasKey)
+                }
+                if hasKey, let budget = model.budgets[profile.id] { BudgetLabel(budget: budget) }
+                let killers = model.budgetKillers(burning: profile)
+                if hasKey && !killers.isEmpty {
+                    Label(L("Wird vom Budget-Killer in „\(killers.map { AppModel.folderName($0.path) }.joined(separator: ", "))“ verbrannt"),
+                          systemImage: "flame.fill")
+                        .font(.callout).foregroundStyle(.orange)
                 }
                 if checking { ProgressView().controlSize(.small) }
                 if let checkResult {
@@ -292,7 +298,7 @@ struct ProjectRow: View {
                 if model.isDisabled {
                     Image(systemName: "pause.circle").foregroundStyle(.secondary)
                 } else {
-                    // Hidden: three clicks on the status icon switch the budget pool on or off.
+                    // Hidden: three clicks on the status icon switch the Budget-Killer on or off.
                     StatusIcon(status: status, keyPresent: keyPresent)
                         .contentShape(Rectangle())
                         .onTapGesture(count: 3) { model.togglePool(binding) }
@@ -323,9 +329,9 @@ struct ProjectRow: View {
                     .help("Zuordnung entfernen")
             }
             if binding.pooled == true && !model.isDisabled {
-                Label("Budget-Pool: nach dem Budget dieses Keys werden die Keys der anderen Profile am selben Gateway genutzt.",
-                      systemImage: "square.stack.3d.up")
-                    .font(.caption).foregroundStyle(.purple)
+                Label("Budget-Killer: Nach dem Budget dieses Keys werden die Keys der anderen Profile am selben Gateway verbrannt.",
+                      systemImage: "flame.fill")
+                    .font(.caption).foregroundStyle(.red)
             }
             if model.isDisabled {
                 Text("Deaktiviert – Claude nutzt hier die normale Anmeldung.").font(.caption).foregroundStyle(.secondary)
@@ -358,21 +364,29 @@ struct ProjectRow: View {
     }
 }
 
-/// Remaining budget of a key, e.g. "Budget 6,79 $ von 10,00 $ übrig · Reset 01.11.2026".
+/// Budget of a key: what is left in green (red once used up), what was spent in red,
+/// e.g. "6,79 $ übrig von 10,00 $ · 3,21 $ verbraucht · Reset 01.11.2026".
 struct BudgetLabel: View {
     let budget: KeyBudget
 
     var body: some View {
         let usd = FloatingPointFormatStyle<Double>.Currency(code: "USD")
-        let text: String
-        if let limit = budget.maxBudget {
-            text = L("Budget \(budget.remaining.formatted(usd)) von \(limit.formatted(usd)) übrig")
-                + (budget.resetAt.map { L(" · Reset \($0.formatted(date: .abbreviated, time: .omitted))") } ?? "")
-        } else {
-            text = L("Kein Budgetlimit · \(budget.spend.formatted(usd)) verbraucht")
+        HStack(spacing: 4) {
+            Image(systemName: "dollarsign.circle").foregroundStyle(.secondary)
+            if let limit = budget.maxBudget {
+                Text(verbatim: L("\(budget.remaining.formatted(usd)) übrig")).fontWeight(.semibold)
+                    .foregroundStyle(budget.remaining > 0 ? .green : .red)
+                Text(verbatim: L("von \(limit.formatted(usd))")).foregroundStyle(.secondary)
+            } else {
+                Text("Kein Budgetlimit").fontWeight(.semibold).foregroundStyle(.green)
+            }
+            Text(verbatim: "·").foregroundStyle(.secondary)
+            Text(verbatim: L("\(budget.spend.formatted(usd)) verbraucht")).foregroundStyle(.red)
+            if let reset = budget.resetAt {
+                Text(verbatim: L("· Reset \(reset.formatted(date: .abbreviated, time: .omitted))")).foregroundStyle(.secondary)
+            }
         }
-        let color: Color = budget.remaining <= 0 ? .red : budget.remaining < (budget.maxBudget ?? .infinity) * 0.1 ? .orange : .secondary
-        return Label(text, systemImage: "dollarsign.circle").font(.callout).foregroundStyle(color)
+        .font(.callout)
     }
 }
 

@@ -103,7 +103,7 @@ public struct KeyHelperCommand {
         return best?.key ?? own
     }
 
-    static func sameEndpoint(_ a: URL, _ b: URL) -> Bool {
+    public static func sameEndpoint(_ a: URL, _ b: URL) -> Bool {
         func trimmed(_ url: URL) -> Substring {
             let s = url.absoluteString
             return s[..<(s.lastIndex { $0 != "/" }.map(s.index(after:)) ?? s.startIndex)]

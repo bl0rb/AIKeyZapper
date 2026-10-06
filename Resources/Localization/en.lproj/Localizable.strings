@@ -2,7 +2,6 @@
 " %@ Eintrag/Einträge übersprungen (Ordner fehlt, Konflikt oder nicht freigegebener Endpunkt)." = " %@ entry/entries skipped (folder missing, conflict or endpoint not allowed).";
 " Sicherung: %@" = " Backup: %@";
 " · Modell %@" = " · model %@";
-" · Reset %@" = " · resets %@";
 "%@ (%@) setzen „%@“; die Projektzuordnung hat Vorrang." = "%@ (%@) set “%@”; the project assignment takes precedence.";
 "%@ (%@) sind kein gültiges JSON; Claude Code ignoriert die Datei." = "%@ (%@) are not valid JSON; Claude Code ignores the file.";
 "%@ (%@): „%@“ leitet Claude Code an LiteLLM vorbei." = "%@ (%@): “%@” routes Claude Code around LiteLLM.";
@@ -11,7 +10,9 @@
 "%@ ist kein gültiges JSON." = "%@ is not valid JSON.";
 "%@ ist nicht lesbar" = "%@ is not readable";
 "%@ liegt in einem Git-Repository. Claude Code liest Projekteinstellungen nur aus %@." = "%@ is inside a Git repository. Claude Code reads project settings only from %@.";
+"%@ verbraucht" = "%@ spent";
 "%@ wurde während der Änderung mehrfach von einem anderen Prozess geändert. Bitte erneut versuchen." = "%@ was changed repeatedly by another process during the update. Please try again.";
+"%@ übrig" = "%@ left";
 "%@: „%@“ ist bereits mit einem anderen Wert gesetzt. Bitte manuell entfernen." = "%@: “%@” is already set to a different value. Please remove it manually.";
 ", %@ übersprungen (Ordner fehlt oder Konflikt)" = ", %@ skipped (folder missing or conflict)";
 "--profile" = "--profile";
@@ -37,11 +38,10 @@
 "Bereits Profil „%@“ zugeordnet – wird umgestellt." = "Already assigned to profile “%@” – will be switched.";
 "Bitte eine vollständige http(s)-URL angeben." = "Please enter a complete http(s) URL.";
 "Bitte wählen" = "Please choose";
-"Budget %@ von %@ übrig" = "Budget %@ of %@ left";
 "Budget dieses Keys ist ausgeschöpft." = "This key's budget is exhausted.";
-"Budget-Pool für „%@“ aktiv: Ist das Budget von „%@“ verbraucht, nutzt Claude die Keys der anderen Profile am selben Gateway. Laufende Claude-Sitzungen bitte neu starten." = "Budget pool for “%@” is on: once the budget of “%@” is used up, Claude uses the keys of the other profiles on the same gateway. Please restart running Claude sessions.";
-"Budget-Pool für „%@“ beendet: Claude nutzt nur noch den Key von „%@“. Laufende Claude-Sitzungen bitte neu starten." = "Budget pool for “%@” is off: Claude only uses the key of “%@” again. Please restart running Claude sessions.";
-"Budget-Pool: nach dem Budget dieses Keys werden die Keys der anderen Profile am selben Gateway genutzt." = "Budget pool: once this key's budget is used up, the keys of the other profiles on the same gateway are used.";
+"Budget-Killer für „%@“ aktiv: Ist das Budget von „%@“ verbraucht, verbrennt Claude die Keys der anderen Profile am selben Gateway. Laufende Claude-Sitzungen bitte neu starten." = "Budget-Killer for “%@” is on: once the budget of “%@” is used up, Claude burns the keys of the other profiles on the same gateway. Please restart running Claude sessions.";
+"Budget-Killer für „%@“ aus: Claude nutzt nur noch den Key von „%@“. Laufende Claude-Sitzungen bitte neu starten." = "Budget-Killer for “%@” is off: Claude only uses the key of “%@” again. Please restart running Claude sessions.";
+"Budget-Killer: Nach dem Budget dieses Keys werden die Keys der anderen Profile am selben Gateway verbrannt." = "Budget-Killer: once this key's budget is used up, the keys of the other profiles on the same gateway are burned.";
 "Claude Code" = "Claude Code";
 "Claude Code holt in jedem zugeordneten Projekt den passenden Key automatisch über den Helper – kein manuelles Wechseln nötig. Nach neuen Zuordnungen die Claude-Sitzung einmal neu starten." = "In every assigned project, Claude Code fetches the right key automatically via the helper – no manual switching. After new assignments, restart the Claude session once.";
 "Claude Code nutzt in allen Projekten die normale Anmeldung. Die Zuordnungen bleiben gespeichert." = "Claude Code uses the normal login in all projects. The assignments stay saved.";
@@ -108,7 +108,7 @@
 "Installieren" = "Install";
 "IntelliJ nutzt diese CLI. Unter %@ gilt die Projektzuordnung nur beim Start direkt im Projektordner. Aktualisieren mit „claude update“." = "IntelliJ uses this CLI. Below %@, the project assignment only applies when started directly in the project folder. Update with “claude update”.";
 "Jedes Projekt nutzt seinen eigenen Key, gleichzeitig und unabhängig voneinander." = "Each project uses its own key, simultaneously and independently.";
-"Kein Budgetlimit · %@ verbraucht" = "No budget limit · %@ spent";
+"Kein Budgetlimit" = "No budget limit";
 "Kein Key hinterlegt – Anfragen schlagen fehl" = "No key stored – requests will fail";
 "Kein Ordner gewählt" = "No folder selected";
 "Kein gültiges JSON: Claude Code ignoriert die Datei, und das Speichern der Modellauswahl schlägt fehl." = "Not valid JSON: Claude Code ignores the file, and saving the model choice fails.";
@@ -233,6 +233,7 @@
 "Von der IT vorgegeben – nur der Key kann geändert werden." = "Managed by IT – only the key can be changed.";
 "Weitere Umgebungsvariablen" = "Additional environment variables";
 "Wiederherstellen" = "Restore";
+"Wird vom Budget-Killer in „%@“ verbrannt" = "Being burned by the Budget-Killer in “%@”";
 "Zugriff auf den Schlüsselbund verweigert (OSStatus %@)." = "Keychain access denied (OSStatus %@).";
 "Zuordnen" = "Assign";
 "Zuordnung entfernen" = "Remove assignment";
@@ -245,10 +246,12 @@
 "keyzapper-helper" = "keyzapper-helper";
 "leer lassen, um den Key zu behalten" = "leave empty to keep the key";
 "schemaVersion fehlt" = "schemaVersion missing";
+"von %@" = "of %@";
 "z. B. Projekt Alpha" = "e.g. Project Alpha";
 "~/.claude/settings.json ist jetzt gültig und frei von Klartext-Keys." = "~/.claude/settings.json is now valid and free of plaintext keys.";
 "~/.claude/settings.json prüfen, reparieren und Standardprofil setzen" = "Check and repair ~/.claude/settings.json and set the default profile";
 "~/.claude/settings.json: %@ Hinweis(e)" = "~/.claude/settings.json: %@ issue(s)";
+"· Reset %@" = "· resets %@";
 "Ändern" = "Change";
 "Übernehmen" = "Apply";
 "„%@“ ist bereits eingerichtet – keine Änderungen." = "“%@” is already set up – no changes.";

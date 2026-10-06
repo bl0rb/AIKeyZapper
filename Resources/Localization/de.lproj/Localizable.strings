@@ -2,7 +2,6 @@
 " %@ Eintrag/Einträge übersprungen (Ordner fehlt, Konflikt oder nicht freigegebener Endpunkt)." = " %@ Eintrag/Einträge übersprungen (Ordner fehlt, Konflikt oder nicht freigegebener Endpunkt).";
 " Sicherung: %@" = " Sicherung: %@";
 " · Modell %@" = " · Modell %@";
-" · Reset %@" = " · Reset %@";
 "%@ (%@) setzen „%@“; die Projektzuordnung hat Vorrang." = "%@ (%@) setzen „%@“; die Projektzuordnung hat Vorrang.";
 "%@ (%@) sind kein gültiges JSON; Claude Code ignoriert die Datei." = "%@ (%@) sind kein gültiges JSON; Claude Code ignoriert die Datei.";
 "%@ (%@): „%@“ leitet Claude Code an LiteLLM vorbei." = "%@ (%@): „%@“ leitet Claude Code an LiteLLM vorbei.";
@@ -11,7 +10,9 @@
 "%@ ist kein gültiges JSON." = "%@ ist kein gültiges JSON.";
 "%@ ist nicht lesbar" = "%@ ist nicht lesbar";
 "%@ liegt in einem Git-Repository. Claude Code liest Projekteinstellungen nur aus %@." = "%@ liegt in einem Git-Repository. Claude Code liest Projekteinstellungen nur aus %@.";
+"%@ verbraucht" = "%@ verbraucht";
 "%@ wurde während der Änderung mehrfach von einem anderen Prozess geändert. Bitte erneut versuchen." = "%@ wurde während der Änderung mehrfach von einem anderen Prozess geändert. Bitte erneut versuchen.";
+"%@ übrig" = "%@ übrig";
 "%@: „%@“ ist bereits mit einem anderen Wert gesetzt. Bitte manuell entfernen." = "%@: „%@“ ist bereits mit einem anderen Wert gesetzt. Bitte manuell entfernen.";
 ", %@ übersprungen (Ordner fehlt oder Konflikt)" = ", %@ übersprungen (Ordner fehlt oder Konflikt)";
 "--profile" = "--profile";
@@ -37,11 +38,10 @@
 "Bereits Profil „%@“ zugeordnet – wird umgestellt." = "Bereits Profil „%@“ zugeordnet – wird umgestellt.";
 "Bitte eine vollständige http(s)-URL angeben." = "Bitte eine vollständige http(s)-URL angeben.";
 "Bitte wählen" = "Bitte wählen";
-"Budget %@ von %@ übrig" = "Budget %@ von %@ übrig";
 "Budget dieses Keys ist ausgeschöpft." = "Budget dieses Keys ist ausgeschöpft.";
-"Budget-Pool für „%@“ aktiv: Ist das Budget von „%@“ verbraucht, nutzt Claude die Keys der anderen Profile am selben Gateway. Laufende Claude-Sitzungen bitte neu starten." = "Budget-Pool für „%@“ aktiv: Ist das Budget von „%@“ verbraucht, nutzt Claude die Keys der anderen Profile am selben Gateway. Laufende Claude-Sitzungen bitte neu starten.";
-"Budget-Pool für „%@“ beendet: Claude nutzt nur noch den Key von „%@“. Laufende Claude-Sitzungen bitte neu starten." = "Budget-Pool für „%@“ beendet: Claude nutzt nur noch den Key von „%@“. Laufende Claude-Sitzungen bitte neu starten.";
-"Budget-Pool: nach dem Budget dieses Keys werden die Keys der anderen Profile am selben Gateway genutzt." = "Budget-Pool: nach dem Budget dieses Keys werden die Keys der anderen Profile am selben Gateway genutzt.";
+"Budget-Killer für „%@“ aktiv: Ist das Budget von „%@“ verbraucht, verbrennt Claude die Keys der anderen Profile am selben Gateway. Laufende Claude-Sitzungen bitte neu starten." = "Budget-Killer für „%@“ aktiv: Ist das Budget von „%@“ verbraucht, verbrennt Claude die Keys der anderen Profile am selben Gateway. Laufende Claude-Sitzungen bitte neu starten.";
+"Budget-Killer für „%@“ aus: Claude nutzt nur noch den Key von „%@“. Laufende Claude-Sitzungen bitte neu starten." = "Budget-Killer für „%@“ aus: Claude nutzt nur noch den Key von „%@“. Laufende Claude-Sitzungen bitte neu starten.";
+"Budget-Killer: Nach dem Budget dieses Keys werden die Keys der anderen Profile am selben Gateway verbrannt." = "Budget-Killer: Nach dem Budget dieses Keys werden die Keys der anderen Profile am selben Gateway verbrannt.";
 "Claude Code" = "Claude Code";
 "Claude Code holt in jedem zugeordneten Projekt den passenden Key automatisch über den Helper – kein manuelles Wechseln nötig. Nach neuen Zuordnungen die Claude-Sitzung einmal neu starten." = "Claude Code holt in jedem zugeordneten Projekt den passenden Key automatisch über den Helper – kein manuelles Wechseln nötig. Nach neuen Zuordnungen die Claude-Sitzung einmal neu starten.";
 "Claude Code nutzt in allen Projekten die normale Anmeldung. Die Zuordnungen bleiben gespeichert." = "Claude Code nutzt in allen Projekten die normale Anmeldung. Die Zuordnungen bleiben gespeichert.";
@@ -108,7 +108,7 @@
 "Installieren" = "Installieren";
 "IntelliJ nutzt diese CLI. Unter %@ gilt die Projektzuordnung nur beim Start direkt im Projektordner. Aktualisieren mit „claude update“." = "IntelliJ nutzt diese CLI. Unter %@ gilt die Projektzuordnung nur beim Start direkt im Projektordner. Aktualisieren mit „claude update“.";
 "Jedes Projekt nutzt seinen eigenen Key, gleichzeitig und unabhängig voneinander." = "Jedes Projekt nutzt seinen eigenen Key, gleichzeitig und unabhängig voneinander.";
-"Kein Budgetlimit · %@ verbraucht" = "Kein Budgetlimit · %@ verbraucht";
+"Kein Budgetlimit" = "Kein Budgetlimit";
 "Kein Key hinterlegt – Anfragen schlagen fehl" = "Kein Key hinterlegt – Anfragen schlagen fehl";
 "Kein Ordner gewählt" = "Kein Ordner gewählt";
 "Kein gültiges JSON: Claude Code ignoriert die Datei, und das Speichern der Modellauswahl schlägt fehl." = "Kein gültiges JSON: Claude Code ignoriert die Datei, und das Speichern der Modellauswahl schlägt fehl.";
@@ -233,6 +233,7 @@
 "Von der IT vorgegeben – nur der Key kann geändert werden." = "Von der IT vorgegeben – nur der Key kann geändert werden.";
 "Weitere Umgebungsvariablen" = "Weitere Umgebungsvariablen";
 "Wiederherstellen" = "Wiederherstellen";
+"Wird vom Budget-Killer in „%@“ verbrannt" = "Wird vom Budget-Killer in „%@“ verbrannt";
 "Zugriff auf den Schlüsselbund verweigert (OSStatus %@)." = "Zugriff auf den Schlüsselbund verweigert (OSStatus %@).";
 "Zuordnen" = "Zuordnen";
 "Zuordnung entfernen" = "Zuordnung entfernen";
@@ -245,10 +246,12 @@
 "keyzapper-helper" = "keyzapper-helper";
 "leer lassen, um den Key zu behalten" = "leer lassen, um den Key zu behalten";
 "schemaVersion fehlt" = "schemaVersion fehlt";
+"von %@" = "von %@";
 "z. B. Projekt Alpha" = "z. B. Projekt Alpha";
 "~/.claude/settings.json ist jetzt gültig und frei von Klartext-Keys." = "~/.claude/settings.json ist jetzt gültig und frei von Klartext-Keys.";
 "~/.claude/settings.json prüfen, reparieren und Standardprofil setzen" = "~/.claude/settings.json prüfen, reparieren und Standardprofil setzen";
 "~/.claude/settings.json: %@ Hinweis(e)" = "~/.claude/settings.json: %@ Hinweis(e)";
+"· Reset %@" = "· Reset %@";
 "Ändern" = "Ändern";
 "Übernehmen" = "Übernehmen";
 "„%@“ ist bereits eingerichtet – keine Änderungen." = "„%@“ ist bereits eingerichtet – keine Änderungen.";
