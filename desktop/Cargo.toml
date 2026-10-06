@@ -1,0 +1,11 @@
+[workspace]
+members = ["core", "src-tauri"]
+resolver = "2"
+
+# PBKDF2 with 600 000 rounds is unusably slow without optimisation, also in debug builds and tests.
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.pbkdf2]
+opt-level = 3
+[profile.dev.package.aes-gcm]
+opt-level = 3

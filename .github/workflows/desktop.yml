@@ -1,0 +1,48 @@
+name: Desktop (Tauri)
+
+on:
+  push:
+    branches: [main]
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
+  pull_request:
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            bundles: app,dmg
+          - os: windows-latest
+            bundles: msi
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check translations
+        if: runner.os == 'macOS'
+        run: python3 scripts/l10n_check.py
+
+      - name: Test core
+        run: cargo test -p keyzapper-core
+
+      - name: Build
+        run: |
+          npm ci
+          npx tauri build --bundles ${{ matrix.bundles }}
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: KeyZapper-${{ runner.os }}
+          path: |
+            desktop/target/release/bundle/dmg/*.dmg
+            desktop/target/release/bundle/msi/*.msi

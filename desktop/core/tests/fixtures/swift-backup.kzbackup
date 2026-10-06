@@ -1,0 +1,9 @@
+{
+  "cipher" : "aes-256-gcm",
+  "format" : "keyzapper-backup",
+  "iterations" : 100000,
+  "kdf" : "pbkdf2-sha256",
+  "salt" : "yw1d804xuJNpQ+\/kYJAadQ==",
+  "sealed" : "N3KEIXJzwVhK8e7Xcnd6GspC8XTnZQfo458jvmYYy15sDEU5TEu5Dwpljflhw1SkD\/pXbpmVx9EjXd1OyHLBgL3Mu8N0kZ8\/tLXnOhOsxDBUk3uSpXokiWG7H9t0HRAcy7\/wJ3m09ndauLjAthdkx+99ZZjGVgJMXnyLfdOfS+4v98boxLM5wBbtvafllR541LfBMjzxMyTFPVFlPRrnNIiNot\/Tw2BfEd0Kbi5ufdk9c66sOOi3+HDRDbY93uAj2TosnDVdsnWUl251WqCqOD3BJTOT6iBq8rJhF5Uyb\/VjM0whYYyViTcWZ12W+CNX2Y\/wurz1NKB4DNmezvHMTjEFS+qrxL1qrRf8GjXzn7rmJwQ1ZofSaSrhlLZ3DAxyd5Iyd50NuoceFQbPF1hMoo\/CR9RhNJyf8VaVOOp21wPP7E5zF3VkinstXaYqKKn\/jOsZMlmvlvnOML+qi+1SpLngU77nSXNnHE8fy1oTvw77Rr63CQGV+igQQroLotF3iWuS1XTNk+AKvb57jMakQOReO8JSqWZWEtRGyOVatcbuHHLh+g9PYzLd875HzufxGQLHDIOBgzMH5nWDKmA2wzXw50r9640PgT86h9zESShu0f+lag88xEMTIGmKItbDuCL66KggxYtXkZ1ckuKMM1bYqGHyHZjCFs6NecDq4wZAXq6xHnUYLw5OX7wGpWigSYa89JLoEPrNxL68RicZabzjf5MHonSC+s9+7GybeGOkj\/FBkhzhD0d2MFGtk6gCRA+i+tXjvrgbH\/M=",
+  "version" : 1
+}
