@@ -27,6 +27,7 @@ Claude Code ──apiKeyHelper──▶ keyzapper-helper ──▶ macOS Keychai
 * Assign project folders to a profile. The app only adds to `.claude/settings.local.json` and excludes the file from Git via `.git/info/exclude`.
 * Status per project: active, differing, folder missing, key missing, conflicts with other settings.
 * Test connection against LiteLLM (invalid or blocked key, rate limit, budget, gateway unreachable).
+* Remaining budget per key, as reported by LiteLLM (`/key/info`): amount left of the limit and next reset, or the spend for keys without a limit.
 * Removing an assignment only removes the entries the app set itself.
 * Overview with all profiles, masked keys and assigned projects. Everything can be changed directly; keys can be copied and replaced.
 * Update check against the GitHub releases with one-click installation; the version is shown in the app and under “About KeyZapper”.

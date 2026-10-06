@@ -27,6 +27,7 @@ Claude Code ──apiKeyHelper──▶ keyzapper-helper ──▶ macOS-Schlüs
 * Projektordner einem Profil zuordnen. Die App ergänzt nur `.claude/settings.local.json` und schließt die Datei per `.git/info/exclude` von Git aus.
 * Status je Projekt: aktiv, abweichend, Ordner fehlt, Key fehlt, Konflikte mit anderen Einstellungen.
 * Verbindungstest gegen LiteLLM (ungültiger oder gesperrter Key, Rate-Limit, Budget, Gateway nicht erreichbar).
+* Verbleibendes Budget je Key laut LiteLLM (`/key/info`): Rest vom Limit und nächster Reset, bei Keys ohne Limit die bisherigen Ausgaben.
 * Rücknahme entfernt nur die Einträge, die die App selbst gesetzt hat.
 * Übersicht mit allen Profilen, maskierten Keys und zugeordneten Projekten. Alles lässt sich direkt ändern; Keys lassen sich kopieren und ersetzen.
 * Update-Prüfung gegen die GitHub-Releases mit Installation per Klick; die Version steht in der App und unter „Über KeyZapper“.
