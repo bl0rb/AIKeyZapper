@@ -78,7 +78,8 @@ fn refresh_budgets(app: &AppHandle, only: Option<&str>) {
     }
 }
 
-fn check_updates(app: &AppHandle, user_initiated: bool) {
+/// Stable releases only, unless `beta` was asked for or a beta is installed (testers get the next beta too).
+fn check_updates(app: &AppHandle, user_initiated: bool, beta: bool) {
     let (enabled, version) = with_model(app, |m| (m.config.update_check_enabled, m.app_version.clone()));
     let notice = |text: String| {
         if user_initiated {
@@ -89,7 +90,7 @@ fn check_updates(app: &AppHandle, user_initiated: bool) {
         return notice(l!("Updates werden von der IT verteilt; die Update-Prüfung ist abgeschaltet."));
     }
     let Some(version) = version else { return notice(l!("Entwicklungsversion – keine Update-Prüfung.")) };
-    match update::latest_release() {
+    match update::latest_release(beta || update::is_prerelease(&version)) {
         Ok(release) if update::is_newer(&release.version, &version) => with_model(app, |m| m.available_update = Some(release)),
         Ok(_) => notice(l!("KeyZapper %@ ist aktuell.", version)),
         Err(e) => {
@@ -106,7 +107,7 @@ fn start_background(app: &AppHandle) {
     refresh(app);
     refresh_budgets(app, None);
     let handle = app.clone();
-    std::thread::spawn(move || check_updates(&handle, false));
+    std::thread::spawn(move || check_updates(&handle, false, false));
     let handle = app.clone();
     std::thread::spawn(move || {
         let minimum = with_model(&handle, |m| m.minimum_cli_version());
@@ -428,9 +429,9 @@ async fn import_backup(app: AppHandle, path: String, password: String) -> bool {
 }
 
 #[tauri::command]
-async fn check_for_updates(app: AppHandle) -> View {
+async fn check_for_updates(app: AppHandle, beta: bool) -> View {
     blocking(move || {
-        check_updates(&app, true);
+        check_updates(&app, true, beta);
         view(&app)
     })
     .await

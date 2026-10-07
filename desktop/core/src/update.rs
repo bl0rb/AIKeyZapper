@@ -3,6 +3,7 @@
 
 use crate::{gateway, l};
 use sha2::{Digest, Sha256};
+use std::cmp::Ordering;
 use std::io::Read;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -13,6 +14,8 @@ pub const INSTALLER_EXTENSION: &str = if cfg!(windows) { ".msi" } else { ".pkg" 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ReleaseInfo {
     pub version: String,
+    /// GitHub pre-release (beta tags like `1.2.0-beta.1`).
+    pub prerelease: bool,
     pub page_url: String,
     pub package_url: Option<String>,
     /// Hex SHA-256 of the package as published by GitHub (`digest` of the release asset), if available.
@@ -42,10 +45,19 @@ impl std::fmt::Display for UpdateError {
     }
 }
 
-pub fn latest_release() -> Result<ReleaseInfo, UpdateError> {
-    let url = format!("https://api.github.com/repos/{REPOSITORY}/releases/latest");
+/// The newest release; with `include_prereleases` also beta releases (whichever version is highest).
+pub fn latest_release(include_prereleases: bool) -> Result<ReleaseInfo, UpdateError> {
+    if !include_prereleases {
+        let body = get_json(&format!("https://api.github.com/repos/{REPOSITORY}/releases/latest"))?;
+        return parse(&body).ok_or(UpdateError::Unavailable(200));
+    }
+    let body = get_json(&format!("https://api.github.com/repos/{REPOSITORY}/releases?per_page=30"))?;
+    newest(&body).ok_or(UpdateError::Unavailable(200))
+}
+
+fn get_json(url: &str) -> Result<String, UpdateError> {
     let mut response = gateway::agent(Duration::from_secs(15))
-        .get(&url)
+        .get(url)
         .header("Accept", "application/vnd.github+json")
         .header("User-Agent", "KeyZapper")
         .call()
@@ -53,12 +65,24 @@ pub fn latest_release() -> Result<ReleaseInfo, UpdateError> {
     if response.status().as_u16() != 200 {
         return Err(UpdateError::Unavailable(response.status().as_u16()));
     }
-    let body = response.body_mut().read_to_string().map_err(|e| UpdateError::Network(e.to_string()))?;
-    parse(&body).ok_or(UpdateError::Unavailable(200))
+    response.body_mut().read_to_string().map_err(|e| UpdateError::Network(e.to_string()))
 }
 
 pub fn parse(body: &str) -> Option<ReleaseInfo> {
-    let release: serde_json::Value = serde_json::from_str(body).ok()?;
+    release_info(&serde_json::from_str(body).ok()?)
+}
+
+/// The highest-versioned published release in a `GET /releases` list.
+pub fn newest(body: &str) -> Option<ReleaseInfo> {
+    let releases: Vec<serde_json::Value> = serde_json::from_str(body).ok()?;
+    releases
+        .iter()
+        .filter(|r| r["draft"].as_bool() != Some(true))
+        .filter_map(release_info)
+        .max_by(|a, b| compare_versions(&a.version, &b.version))
+}
+
+fn release_info(release: &serde_json::Value) -> Option<ReleaseInfo> {
     // Only accept packages served by GitHub itself.
     let asset = release["assets"].as_array()?.iter().find(|a| {
         a["name"].as_str().is_some_and(|n| n.ends_with(INSTALLER_EXTENSION))
@@ -66,6 +90,7 @@ pub fn parse(body: &str) -> Option<ReleaseInfo> {
     });
     Some(ReleaseInfo {
         version: normalized(release["tag_name"].as_str()?),
+        prerelease: release["prerelease"].as_bool().unwrap_or(false),
         page_url: release["html_url"].as_str()?.to_string(),
         package_url: asset.and_then(|a| a["browser_download_url"].as_str()).map(String::from),
         package_sha256: asset
@@ -79,17 +104,52 @@ fn normalized(version: &str) -> String {
     version.strip_prefix('v').unwrap_or(version).to_string()
 }
 
-/// Compares dotted versions numerically.
-pub fn is_older(a: &str, b: &str) -> bool {
-    let parse = |s: &str| s.split('.').map(|p| p.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>();
-    let (pa, pb) = (parse(a), parse(b));
-    for i in 0..pa.len().max(pb.len()) {
-        let (x, y) = (pa.get(i).copied().unwrap_or(0), pb.get(i).copied().unwrap_or(0));
-        if x != y {
-            return x < y;
+/// Semantic version order: numeric fields, then a pre-release (`1.2.0-beta.2`) before its release (`1.2.0`),
+/// pre-release fields compared numerically where both are numbers.
+pub fn compare_versions(a: &str, b: &str) -> Ordering {
+    let split = |v: &str| {
+        let v = normalized(v);
+        let (core, pre) = v.split_once('-').map(|(c, p)| (c.to_string(), Some(p.to_string()))).unwrap_or((v.clone(), None));
+        (core.split('.').map(|p| p.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>(), pre)
+    };
+    let ((ca, pa), (cb, pb)) = (split(a), split(b));
+    for i in 0..ca.len().max(cb.len()) {
+        let order = ca.get(i).unwrap_or(&0).cmp(cb.get(i).unwrap_or(&0));
+        if order.is_ne() {
+            return order;
         }
     }
-    false
+    match (pa, pb) {
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) => Ordering::Greater,
+        (Some(_), None) => Ordering::Less,
+        (Some(pa), Some(pb)) => {
+            let (fa, fb): (Vec<&str>, Vec<&str>) = (pa.split('.').collect(), pb.split('.').collect());
+            for i in 0..fa.len().max(fb.len()) {
+                let order = match (fa.get(i), fb.get(i)) {
+                    (None, _) => Ordering::Less,
+                    (_, None) => Ordering::Greater,
+                    (Some(x), Some(y)) => match (x.parse::<u64>(), y.parse::<u64>()) {
+                        (Ok(x), Ok(y)) => x.cmp(&y),
+                        _ => x.cmp(y),
+                    },
+                };
+                if order.is_ne() {
+                    return order;
+                }
+            }
+            Ordering::Equal
+        }
+    }
+}
+
+pub fn is_older(a: &str, b: &str) -> bool {
+    compare_versions(a, b) == Ordering::Less
+}
+
+/// Beta and other pre-release versions (`1.2.0-beta.1`).
+pub fn is_prerelease(version: &str) -> bool {
+    version.contains('-')
 }
 
 pub fn is_newer(candidate: &str, installed: &str) -> bool {
@@ -139,6 +199,12 @@ mod tests {
     fn compares_versions_and_picks_platform_package() {
         assert!(is_newer("v1.0.10", "1.0.9"));
         assert!(!is_newer("1.0.7", "1.0.7"));
+        assert!(is_newer("1.1.0-beta.2", "1.1.0-beta.1"));
+        assert!(is_newer("1.1.0-beta.10", "1.1.0-beta.9"));
+        assert!(is_newer("1.1.0", "1.1.0-beta.2"));
+        assert!(is_newer("1.1.0-beta.1", "1.0.7"));
+        assert!(!is_newer("1.1.0-beta.1", "1.1.0"));
+        assert!(is_older("2.1.206", "2.1.288"));
         let body = format!(
             r#"{{"tag_name":"1.2.0","html_url":"https://github.com/x/y/releases/1.2.0","assets":[
               {{"name":"KeyZapper-1.2.0{ext}","browser_download_url":"https://github.com/x/y/KeyZapper-1.2.0{ext}","digest":"sha256:ABC"}},
@@ -147,7 +213,20 @@ mod tests {
         );
         let release = parse(&body).unwrap();
         assert_eq!(release.version, "1.2.0");
+        assert!(!release.prerelease);
         assert_eq!(release.package_sha256.as_deref(), Some("abc"));
         assert!(release.package_url.unwrap().starts_with("https://github.com/"));
+    }
+
+    #[test]
+    fn newest_includes_betas_but_skips_drafts() {
+        let body = r#"[
+          {"tag_name":"1.0.7","prerelease":false,"html_url":"https://github.com/x/y/releases/1.0.7","assets":[]},
+          {"tag_name":"1.1.0-beta.2","prerelease":true,"html_url":"https://github.com/x/y/releases/b2","assets":[]},
+          {"tag_name":"1.1.0-beta.10","prerelease":true,"html_url":"https://github.com/x/y/releases/b10","assets":[]},
+          {"tag_name":"1.2.0","draft":true,"html_url":"https://github.com/x/y/releases/d","assets":[]}]"#;
+        let release = newest(body).unwrap();
+        assert_eq!(release.version, "1.1.0-beta.10");
+        assert!(release.prerelease);
     }
 }

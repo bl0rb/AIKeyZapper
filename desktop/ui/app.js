@@ -195,9 +195,13 @@ function renderBanners() {
       t('IntelliJ nutzt diese CLI. Unter %@ gilt die Projektzuordnung nur beim Start direkt im Projektordner. Aktualisieren mit „claude update“.', view.minimumCliVersion)));
   }
   if (view.availableUpdate) {
+    const { version, prerelease } = view.availableUpdate;
     items.push(banner('info',
-      t('KeyZapper %@ ist verfügbar (installiert: %@)', view.availableUpdate.version, view.appVersion ?? '?'),
-      view.installingUpdate ? t('Paket wird geladen und geprüft …') : t('Die Installation benötigt Administratorrechte.'),
+      prerelease ? t('Beta: KeyZapper %@ ist verfügbar (installiert: %@)', version, view.appVersion ?? '?')
+        : t('KeyZapper %@ ist verfügbar (installiert: %@)', version, view.appVersion ?? '?'),
+      view.installingUpdate ? t('Paket wird geladen und geprüft …')
+        : prerelease ? t('Beta-Versionen sind zum Testen gedacht. Die Installation benötigt Administratorrechte.')
+          : t('Die Installation benötigt Administratorrechte.'),
       [[t('Installieren'), () => call('install_update')], [t('Versionshinweise'), () => call('open_url', { url: view.availableUpdate.pageUrl })]]));
   }
   if (view.notice) items.push(banner('info', view.notice, null, [], () => call('dismiss_notice')));
@@ -227,7 +231,8 @@ function footer() {
   return h('div', { class: 'footer' },
     view.appVersion ? `KeyZapper ${view.appVersion}` : t('KeyZapper Entwicklungsversion'),
     view.updateCheckEnabled
-      ? button(t('Nach Updates suchen'), () => call('check_for_updates'), { cls: 'link' })
+      ? [button(t('Nach Updates suchen'), () => call('check_for_updates', { beta: false }), { cls: 'link' }),
+        button(t('Beta-Version suchen'), () => call('check_for_updates', { beta: true }), { cls: 'link' })]
       : h('span', null, t('Updates über die IT')),
     button(t('So funktioniert’s'), howItWorksDialog, { cls: 'link' }),
     button(t('Projektseite'), () => call('open_url', { url: view.projectUrl }), { cls: 'link' }));

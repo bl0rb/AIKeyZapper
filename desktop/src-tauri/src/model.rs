@@ -776,7 +776,11 @@ impl Model {
             backup_problem: self.backup_problem.clone(),
             outdated_clis: self.outdated_clis.clone(),
             minimum_cli_version: self.minimum_cli_version(),
-            available_update: self.available_update.as_ref().map(|u| UpdateView { version: u.version.clone(), page_url: u.page_url.clone() }),
+            available_update: self.available_update.as_ref().map(|u| UpdateView {
+                version: u.version.clone(),
+                prerelease: u.prerelease,
+                page_url: u.page_url.clone(),
+            }),
             installing_update: self.installing_update,
             keychain_keys: self.keychain_profiles.len(),
             notice: self.notice.clone(),
@@ -937,5 +941,6 @@ struct BackupView {
 #[serde(rename_all = "camelCase")]
 struct UpdateView {
     version: String,
+    prerelease: bool,
     page_url: String,
 }
