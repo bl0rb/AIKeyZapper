@@ -6,7 +6,7 @@ on:
   workflow_call:
     inputs:
       version:
-        description: Version to build (default: version in desktop/src-tauri/tauri.conf.json)
+        description: "Version to build; default: version in desktop/src-tauri/tauri.conf.json"
         type: string
         default: ''
 
