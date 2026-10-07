@@ -1,0 +1,53 @@
+name: Desktop build
+
+# Tests the core and builds the installers: KeyZapper-<version>.pkg (macOS) and KeyZapper-<version>.msi (Windows).
+# Used by desktop.yml (pull requests) and release.yml (tags), so pull requests exercise the release build.
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Version to build; default: version in desktop/src-tauri/tauri.conf.json"
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            script: build-pkg.sh
+          - os: windows-latest
+            script: build-msi.sh
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check translations
+        if: runner.os == 'macOS'
+        run: python3 scripts/l10n_check.py
+
+      - name: Test core
+        run: cargo test -p keyzapper-core
+
+      - name: Build installer
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          npm ci
+          if [ -z "$VERSION" ]; then unset VERSION; fi
+          scripts/${{ matrix.script }}
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: KeyZapper-${{ runner.os }}
+          path: desktop/dist/KeyZapper-*
+          if-no-files-found: error

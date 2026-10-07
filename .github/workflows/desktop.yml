@@ -1,0 +1,16 @@
+name: Desktop (Tauri)
+
+on:
+  push:
+    branches: [main]
+    paths: ['desktop/**', '.github/workflows/desktop.yml', '.github/workflows/desktop-build.yml']
+  pull_request:
+    paths: ['desktop/**', '.github/workflows/desktop.yml', '.github/workflows/desktop-build.yml', '.github/workflows/release.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/desktop-build.yml

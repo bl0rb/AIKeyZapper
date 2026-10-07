@@ -1,0 +1,26 @@
+[package]
+name = "keyzapper"
+version = "1.1.0"
+edition = "2021"
+license = "MIT"
+default-run = "keyzapper"
+
+[[bin]]
+name = "keyzapper"
+path = "src/main.rs"
+
+# Bundled next to the app executable; Claude Code calls it as apiKeyHelper.
+[[bin]]
+name = "keyzapper-helper"
+path = "src/bin/keyzapper-helper.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+keyzapper-core = { path = "../core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"

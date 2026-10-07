@@ -1,0 +1,290 @@
+//! Settings IT can enforce. macOS: Intune "Preference file" profile for the domain `io.github.bl0rb.keyzapper`
+//! (read through CFPreferences, so `/Library/Managed Preferences` wins). Windows: registry policy values under
+//! `HKLM\SOFTWARE\Policies\KeyZapper` (or HKCU), same names; `ManagedProfiles` is a JSON string there.
+
+use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
+
+pub const DOMAIN: &str = "io.github.bl0rb.keyzapper";
+pub const KEYS: [&str; 9] = [
+    "ManagedProfiles", "AllowedGatewayHosts", "DefaultEndpoint", "DefaultModelAlias", "MinimumClaudeCodeVersion",
+    "OneDriveBackup", "BackupDirectory", "UpdateCheckEnabled", "AllowKeyExport",
+];
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ManagedProfile {
+    pub id: String,
+    pub name: String,
+    pub endpoint: String,
+    pub model_alias: String,
+    pub opus_model: Option<String>,
+    pub sonnet_model: Option<String>,
+    pub haiku_model: Option<String>,
+    pub environment: Option<BTreeMap<String, String>>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ManagedConfig {
+    /// `ManagedProfiles`: dicts with `Name`, `Endpoint`, optional `ModelAlias`, `OpusModel`, `SonnetModel`,
+    /// `HaikuModel`, `Environment` (dict) and `ID` (UUID).
+    pub profiles: Vec<ManagedProfile>,
+    /// `AllowedGatewayHosts`: exact hosts or `*.domain`; empty = no restriction.
+    pub allowed_gateway_hosts: Vec<String>,
+    /// `DefaultEndpoint` / `DefaultModelAlias`: prefill for self-created profiles.
+    pub default_endpoint: Option<String>,
+    pub default_model_alias: Option<String>,
+    /// `MinimumClaudeCodeVersion`: threshold for the outdated-CLI warning.
+    pub minimum_claude_code_version: Option<String>,
+    /// `OneDriveBackup`: back up profiles and bindings (never keys) to the user's OneDrive.
+    pub one_drive_backup: bool,
+    /// `BackupDirectory`: explicit backup folder (supports `~`); enables the backup on its own.
+    pub backup_directory: Option<String>,
+    /// `UpdateCheckEnabled`: in-app update check against GitHub releases (default on).
+    pub update_check_enabled: bool,
+    /// `AllowKeyExport`: whether keys may be copied and put into encrypted backups (default on).
+    pub allow_key_export: bool,
+}
+
+impl Default for ManagedConfig {
+    fn default() -> Self {
+        Self::from_values(&Map::new())
+    }
+}
+
+fn as_bool(value: Option<&Value>) -> Option<bool> {
+    match value? {
+        Value::Bool(b) => Some(*b),
+        Value::Number(n) => n.as_i64().map(|n| n != 0),
+        Value::String(s) => match s.to_lowercase().as_str() {
+            "1" | "true" | "yes" => Some(true),
+            "0" | "false" | "no" => Some(false),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn as_string(value: Option<&Value>) -> Option<String> {
+    value?.as_str().map(String::from)
+}
+
+impl ManagedConfig {
+    pub fn from_values(values: &Map<String, Value>) -> Self {
+        let profiles = values
+            .get("ManagedProfiles")
+            .and_then(Value::as_array)
+            .map(|items| items.iter().filter_map(|item| managed_profile(item.as_object()?)).collect())
+            .unwrap_or_default();
+        let allowed_gateway_hosts = match values.get("AllowedGatewayHosts") {
+            Some(Value::Array(items)) => items.iter().filter_map(Value::as_str).map(String::from).collect(),
+            Some(Value::String(text)) => text.split([',', ';', ' ', '\n']).map(String::from).collect(),
+            _ => Vec::<String>::new(),
+        };
+        Self {
+            profiles,
+            allowed_gateway_hosts: allowed_gateway_hosts.into_iter().map(|h| h.trim().to_lowercase()).filter(|h| !h.is_empty()).collect(),
+            default_endpoint: as_string(values.get("DefaultEndpoint")),
+            default_model_alias: as_string(values.get("DefaultModelAlias")),
+            minimum_claude_code_version: as_string(values.get("MinimumClaudeCodeVersion")),
+            one_drive_backup: as_bool(values.get("OneDriveBackup")).unwrap_or(false),
+            backup_directory: as_string(values.get("BackupDirectory")),
+            update_check_enabled: as_bool(values.get("UpdateCheckEnabled")).unwrap_or(true),
+            allow_key_export: as_bool(values.get("AllowKeyExport")).unwrap_or(true),
+        }
+    }
+
+    pub fn load() -> Self {
+        Self::from_values(&platform::load())
+    }
+
+    pub fn is_endpoint_allowed(&self, endpoint: &str) -> bool {
+        if self.allowed_gateway_hosts.is_empty() {
+            return true;
+        }
+        let Some(host) = host_of(endpoint) else { return false };
+        self.allowed_gateway_hosts.iter().any(|pattern| match pattern.strip_prefix('*') {
+            Some(suffix) if suffix.starts_with('.') => host.ends_with(suffix),
+            _ => host == *pattern,
+        })
+    }
+
+    pub fn is_managed(&self, id: &str) -> bool {
+        self.profiles.iter().any(|p| p.id == id)
+    }
+}
+
+/// Lowercased host of an http(s) URL.
+pub fn host_of(endpoint: &str) -> Option<String> {
+    url::Url::parse(endpoint.trim()).ok()?.host_str().filter(|h| !h.is_empty()).map(str::to_lowercase)
+}
+
+fn managed_profile(dict: &Map<String, Value>) -> Option<ManagedProfile> {
+    let name = dict.get("Name")?.as_str()?.trim().to_string();
+    let endpoint = dict.get("Endpoint")?.as_str()?.trim().to_string();
+    if name.is_empty() || host_of(&endpoint).is_none() {
+        return None;
+    }
+    let id = dict.get("ID").and_then(Value::as_str).and_then(crate::models::parse_id).unwrap_or_else(|| derived_id(&name));
+    let environment = dict.get("Environment").and_then(Value::as_object).map(|env| {
+        env.iter().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string()))).collect::<BTreeMap<_, _>>()
+    });
+    Some(ManagedProfile {
+        id,
+        name,
+        endpoint,
+        model_alias: as_string(dict.get("ModelAlias")).unwrap_or_default(),
+        opus_model: as_string(dict.get("OpusModel")),
+        sonnet_model: as_string(dict.get("SonnetModel")),
+        haiku_model: as_string(dict.get("HaikuModel")),
+        environment,
+    })
+}
+
+/// Stable profile ID for a managed profile without explicit `ID`, so bindings survive app restarts
+/// (same derivation as the macOS app).
+pub fn derived_id(name: &str) -> String {
+    let digest = Sha256::digest(format!("keyzapper-managed-profile:{name}").as_bytes());
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    bytes[6] = (bytes[6] & 0x0F) | 0x50; // version 5 style
+    bytes[8] = (bytes[8] & 0x3F) | 0x80; // RFC 4122 variant
+    uuid::Uuid::from_bytes(bytes).hyphenated().to_string().to_uppercase()
+}
+
+#[cfg(target_os = "macos")]
+mod platform {
+    use core_foundation::array::CFArray;
+    use core_foundation::base::{CFType, TCFType};
+    use core_foundation::boolean::CFBoolean;
+    use core_foundation::dictionary::CFDictionary;
+    use core_foundation::number::CFNumber;
+    use core_foundation::string::CFString;
+    use core_foundation_sys::preferences::CFPreferencesCopyAppValue;
+    use serde_json::{Map, Value};
+
+    pub fn load() -> Map<String, Value> {
+        let domain = CFString::new(super::DOMAIN);
+        let mut values = Map::new();
+        for key in super::KEYS {
+            let name = CFString::new(key);
+            let raw = unsafe { CFPreferencesCopyAppValue(name.as_concrete_TypeRef(), domain.as_concrete_TypeRef()) };
+            if raw.is_null() {
+                continue;
+            }
+            let value = unsafe { CFType::wrap_under_create_rule(raw) };
+            if let Some(json) = to_json(&value) {
+                values.insert(key.to_string(), json);
+            }
+        }
+        values
+    }
+
+    fn to_json(value: &CFType) -> Option<Value> {
+        if let Some(s) = value.downcast::<CFString>() {
+            return Some(Value::String(s.to_string()));
+        }
+        if let Some(b) = value.downcast::<CFBoolean>() {
+            return Some(Value::Bool(b.into()));
+        }
+        if let Some(n) = value.downcast::<CFNumber>() {
+            return n.to_i64().map(Value::from).or_else(|| n.to_f64().map(Value::from));
+        }
+        if let Some(array) = value.downcast::<CFArray>() {
+            let items = array.iter().filter_map(|item| to_json(&unsafe { CFType::wrap_under_get_rule(*item) })).collect();
+            return Some(Value::Array(items));
+        }
+        if let Some(dict) = value.downcast::<CFDictionary>() {
+            let (keys, entries) = dict.get_keys_and_values();
+            let mut map = Map::new();
+            for (k, v) in keys.into_iter().zip(entries) {
+                let key = unsafe { CFType::wrap_under_get_rule(k) };
+                if let (Some(key), Some(v)) = (key.downcast::<CFString>(), to_json(&unsafe { CFType::wrap_under_get_rule(v) })) {
+                    map.insert(key.to_string(), v);
+                }
+            }
+            return Some(Value::Object(map));
+        }
+        None
+    }
+}
+
+#[cfg(windows)]
+mod platform {
+    use serde_json::{Map, Value};
+    use winreg::enums::{RegType, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    use winreg::RegKey;
+
+    pub const POLICY_KEY: &str = r"SOFTWARE\Policies\KeyZapper";
+
+    /// Machine policies win over user policies, value by value.
+    pub fn load() -> Map<String, Value> {
+        let mut values = Map::new();
+        for hive in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
+            let Ok(key) = RegKey::predef(hive).open_subkey(POLICY_KEY) else { continue };
+            for name in super::KEYS {
+                if let Some(value) = read(&key, name) {
+                    values.insert(name.to_string(), value);
+                }
+            }
+        }
+        values
+    }
+
+    fn read(key: &RegKey, name: &str) -> Option<Value> {
+        let raw = key.get_raw_value(name).ok()?;
+        match raw.vtype {
+            RegType::REG_DWORD => key.get_value::<u32, _>(name).ok().map(|n| Value::Bool(n != 0)),
+            RegType::REG_MULTI_SZ => key.get_value::<Vec<String>, _>(name).ok().map(|v| Value::Array(v.into_iter().map(Value::String).collect())),
+            RegType::REG_SZ | RegType::REG_EXPAND_SZ => {
+                let text: String = key.get_value(name).ok()?;
+                if name == "ManagedProfiles" {
+                    serde_json::from_str(&text).ok()
+                } else {
+                    Some(Value::String(text))
+                }
+            }
+            _ => None,
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+mod platform {
+    pub fn load() -> serde_json::Map<String, serde_json::Value> {
+        serde_json::Map::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn parses_profiles_hosts_and_flags() {
+        let values = json!({
+            "ManagedProfiles": [{"Name": "Projekt Alpha", "Endpoint": "https://litellm.firma.example", "OpusModel": "o",
+                                 "Environment": {"CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"}},
+                                {"Name": "", "Endpoint": "https://x"}],
+            "AllowedGatewayHosts": ["LiteLLM.firma.example", "*.litellm.firma.example"],
+            "AllowKeyExport": false
+        });
+        let config = ManagedConfig::from_values(values.as_object().unwrap());
+        assert_eq!(config.profiles.len(), 1);
+        assert_eq!(config.profiles[0].id, derived_id("Projekt Alpha"));
+        assert!(config.is_endpoint_allowed("https://litellm.firma.example/v1"));
+        assert!(config.is_endpoint_allowed("https://eu.litellm.firma.example"));
+        assert!(!config.is_endpoint_allowed("https://evil.example"));
+        assert!(!config.allow_key_export && config.update_check_enabled);
+        assert!(ManagedConfig::default().allow_key_export);
+    }
+
+    #[test]
+    fn derived_ids_match_the_macos_app() {
+        let id = derived_id("Projekt Alpha");
+        assert_eq!(id.len(), 36);
+        assert_eq!(&id[14..15], "5");
+        assert_eq!(id, id.to_uppercase());
+    }
+}
