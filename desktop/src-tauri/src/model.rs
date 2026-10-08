@@ -8,13 +8,14 @@ use keyzapper_core::gateway::KeyBudget;
 use keyzapper_core::keys::{masked_hint, KeyStore};
 use keyzapper_core::managed::{host_of, ManagedConfig};
 use keyzapper_core::metadata::MetadataStore;
-use keyzapper_core::models::{new_id, parse_id, AppState, Profile, WorkspaceBinding};
+use keyzapper_core::models::{new_id, parse_id, AppState, AuthType, Profile, WorkspaceBinding};
 use keyzapper_core::paths::{abbreviate_home, folder_name};
 use keyzapper_core::settings::{self, BindingHealth, BindingStatus, SettingsBinder};
 use keyzapper_core::update::ReleaseInfo;
-use keyzapper_core::{cli, helper, l, legacy_keychain};
+use keyzapper_core::tokens::TokenStore;
+use keyzapper_core::{cli, helper, l, legacy_keychain, oidc};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 pub struct Model {
@@ -39,6 +40,11 @@ pub struct Model {
     /// None for development builds.
     pub app_version: Option<String>,
     pub keys: KeyStore,
+    pub tokens: TokenStore,
+    /// SSO profiles whose refresh failed (session expired); cleared on login/logout.
+    pub sso_expired: HashSet<String>,
+    /// SSO profiles with a browser login in progress.
+    pub sso_logging_in: HashSet<String>,
     pub binder: Option<SettingsBinder>,
     pub refresh_generation: u64,
     backup_dir: Option<PathBuf>,
@@ -60,6 +66,10 @@ pub struct ProfileInput {
     pub haiku_model: String,
     pub environment_text: String,
     pub key: String,
+    pub auth_type: AuthType,
+    pub oidc_issuer: String,
+    pub oidc_client_id: String,
+    pub oidc_scope: String,
 }
 
 fn non_empty(value: &str) -> Option<String> {
@@ -100,6 +110,9 @@ impl Model {
             config,
             app_version: version,
             keys: KeyStore::default(),
+            tokens: TokenStore::default(),
+            sso_expired: HashSet::new(),
+            sso_logging_in: HashSet::new(),
             binder: None,
             refresh_generation: 0,
             backup_dir,
@@ -176,6 +189,10 @@ impl Model {
             profile.sonnet_model = managed.sonnet_model.clone();
             profile.haiku_model = managed.haiku_model.clone();
             profile.environment = managed.environment.clone();
+            profile.auth_type = managed.auth_type;
+            profile.oidc_issuer = managed.oidc_issuer.clone();
+            profile.oidc_client_id = managed.oidc_client_id.clone();
+            profile.oidc_scope = managed.oidc_scope.clone();
             if self.state.profile(&managed.id) != Some(&profile) {
                 self.save_profile(profile, None);
             }
@@ -219,7 +236,16 @@ impl Model {
             return false;
         }
         let existing = input.id.as_deref().and_then(parse_id).and_then(|id| self.profile(&id));
-        if existing.is_none() && input.key.trim().is_empty() {
+        let sso = existing.as_ref().map_or(input.auth_type, |p| p.auth_type) == AuthType::Oidc;
+        if sso {
+            if let Err(e) = oidc::validate_url(&input.oidc_issuer) {
+                self.error = Some(e.to_string());
+                return false;
+            }
+            if input.oidc_client_id.trim().is_empty() {
+                return false;
+            }
+        } else if existing.is_none() && input.key.trim().is_empty() {
             return false;
         }
         let mut profile = existing.unwrap_or_else(|| Profile::new(new_id(), String::new(), String::new(), String::new()));
@@ -231,8 +257,14 @@ impl Model {
             profile.sonnet_model = non_empty(&input.sonnet_model);
             profile.haiku_model = non_empty(&input.haiku_model);
             profile.environment = (!environment.is_empty()).then_some(environment);
+            if sso {
+                profile.auth_type = AuthType::Oidc;
+                profile.oidc_issuer = Some(input.oidc_issuer.trim().to_string());
+                profile.oidc_client_id = Some(input.oidc_client_id.trim().to_string());
+                profile.oidc_scope = non_empty(&input.oidc_scope);
+            }
         }
-        self.save_profile(profile, Some(input.key))
+        self.save_profile(profile, (!sso).then_some(input.key))
     }
 
     pub fn save_profile(&mut self, profile: Profile, new_key: Option<String>) -> bool {
@@ -241,6 +273,9 @@ impl Model {
             return false;
         }
         let old = self.profile(&profile.id);
+        if profile.is_sso() && old.as_ref().is_some_and(|o| o.oidc_issuer != profile.oidc_issuer || o.oidc_client_id != profile.oidc_client_id) {
+            self.sso_logout(&profile.id);
+        }
         match self.state.profiles.iter_mut().find(|p| p.id == profile.id) {
             Some(existing) => *existing = profile.clone(),
             None => self.state.profiles.push(profile.clone()),
@@ -294,10 +329,11 @@ impl Model {
                 return;
             }
         }
-        if let Err(e) = self.keys.delete(id) {
+        if let Err(e) = self.keys.delete(id).and_then(|_| oidc::logout(&profile, &self.tokens)) {
             self.error = Some(e.to_string());
             return;
         }
+        self.sso_expired.remove(id);
         if let Some(global) = self.state.global_binding.clone().filter(|g| g.profile_id == profile.id) {
             if let Some(binder) = &self.binder {
                 let _ = binder.revert_global(&global);
@@ -309,13 +345,35 @@ impl Model {
         self.persist();
     }
 
+    /// Signs out locally: removes the tokens (the session at the IdP stays).
+    pub fn sso_logout(&mut self, id: &str) {
+        let Some(profile) = self.profile(id).filter(|p| p.is_sso()) else { return };
+        self.sso_expired.remove(id);
+        if let Err(e) = oidc::logout(&profile, &self.tokens) {
+            self.error = Some(e.to_string());
+        }
+    }
+
+    /// Access token of an SSO profile for gateway calls; flags the profile when the session expired.
+    pub fn sso_token(&mut self, profile: &Profile) -> Result<String, String> {
+        match oidc::access_token(profile, &self.tokens, oidc::unix_now()) {
+            Ok(token) => Ok(token),
+            Err(e) => {
+                if matches!(e, keyzapper_core::errors::Error::SessionExpired(_)) {
+                    self.sso_expired.insert(profile.id.clone());
+                }
+                Err(e.to_string())
+            }
+        }
+    }
+
     /// The key for copying, or None with an error set.
     pub fn key_for_copy(&mut self, id: &str) -> Option<(String, String)> {
         if !self.config.allow_key_export {
             self.error = Some(l!("Das Kopieren von Keys ist laut Firmenrichtlinie (AllowKeyExport) deaktiviert."));
             return None;
         }
-        let profile = self.profile(id)?;
+        let profile = self.profile(id).filter(|p| !p.is_sso())?;
         match self.keys.read(id) {
             Ok(key) => Some((key, profile.name)),
             Err(e) => {
@@ -348,7 +406,7 @@ impl Model {
 
     /// Projects whose Budget-Killer may burn this profile's key: pooled bindings of other profiles on the same endpoint.
     pub fn budget_killers(&self, profile: &Profile) -> Vec<String> {
-        if self.is_disabled() {
+        if self.is_disabled() || profile.is_sso() {
             return vec![];
         }
         self.state
@@ -366,7 +424,7 @@ impl Model {
     /// Hidden Budget-Killer: switches a project between its own key and the pool of all keys on the same endpoint.
     pub fn toggle_pool(&mut self, binding_id: &str) {
         let Some(binding) = self.binding(binding_id) else { return };
-        let Some(profile) = self.profile(&binding.profile_id) else { return };
+        let Some(profile) = self.profile(&binding.profile_id).filter(|p| !p.is_sso()) else { return };
         let pooled = !binding.is_pooled();
         if !self.apply(&profile, &binding.path, Some(&binding), Some(pooled)) {
             return;
@@ -492,7 +550,7 @@ impl Model {
     pub fn backup_payload(&self) -> BackupPayload {
         let keys = if self.config.allow_key_export {
             let all = self.keys.all().unwrap_or_default();
-            self.state.profiles.iter().filter_map(|p| Some((p.id.clone(), all.get(&p.id)?.clone()))).collect()
+            self.state.profiles.iter().filter(|p| !p.is_sso()).filter_map(|p| Some((p.id.clone(), all.get(&p.id)?.clone()))).collect()
         } else {
             BTreeMap::new()
         };
@@ -715,6 +773,7 @@ impl Model {
 
     pub fn view(&self) -> View {
         let keys = self.keys.all().unwrap_or_default();
+        let tokens = self.tokens.all().unwrap_or_default();
         let user_settings_path = self.binder.as_ref().map(|b| b.user_settings_path.clone()).unwrap_or_else(settings::default_user_settings_path);
         View {
             platform: if cfg!(windows) { "windows" } else { "macos" },
@@ -727,7 +786,21 @@ impl Model {
                 .iter()
                 .map(|p| {
                     let key = keys.get(&p.id).filter(|k| !k.is_empty());
+                    let session = tokens.get(&p.id).filter(|t| !t.refresh_token.is_empty());
                     ProfileView {
+                        sso: p.is_sso(),
+                        oidc_issuer: p.oidc_issuer.clone(),
+                        oidc_client_id: p.oidc_client_id.clone(),
+                        oidc_scope: p.oidc_scope.clone(),
+                        sso_state: p.is_sso().then_some(if self.sso_expired.contains(&p.id) {
+                            "expired"
+                        } else if session.is_some() {
+                            "loggedIn"
+                        } else {
+                            "loggedOut"
+                        }),
+                        sso_expires_at: session.and_then(|t| t.expires_at),
+                        sso_logging_in: self.sso_logging_in.contains(&p.id),
                         id: p.id.clone(),
                         name: p.name.clone(),
                         endpoint: p.endpoint.clone(),
@@ -739,7 +812,7 @@ impl Model {
                         managed: self.config.is_managed(&p.id),
                         has_key: key.is_some(),
                         key_hint: key.map(|k| masked_hint(k)),
-                        budget: key.and(self.budgets.get(&p.id)).map(|b| BudgetView {
+                        budget: key.filter(|_| !p.is_sso()).and(self.budgets.get(&p.id)).map(|b| BudgetView {
                             spend: b.spend,
                             max_budget: b.max_budget,
                             remaining: b.max_budget.map(|_| b.remaining()),
@@ -866,6 +939,14 @@ pub struct View {
 #[serde(rename_all = "camelCase")]
 struct ProfileView {
     id: String,
+    sso: bool,
+    oidc_issuer: Option<String>,
+    oidc_client_id: Option<String>,
+    oidc_scope: Option<String>,
+    /// `loggedIn`, `loggedOut` or `expired` for SSO profiles.
+    sso_state: Option<&'static str>,
+    sso_expires_at: Option<i64>,
+    sso_logging_in: bool,
     name: String,
     endpoint: String,
     model_alias: String,

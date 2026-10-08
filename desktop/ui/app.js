@@ -96,6 +96,17 @@ async function call(command, args) {
 const isMac = () => view?.platform !== 'windows';
 const revealLabel = () => (isMac() ? t('Im Finder zeigen') : t('Im Explorer zeigen'));
 const profileName = (id) => view.profiles.find((p) => p.id === id)?.name ?? t('Unbekanntes Profil');
+const credentialOk = (p) => (p.sso ? p.ssoState === 'loggedIn' : p.hasKey);
+const ssoStateText = (p) => ({ loggedIn: t('Angemeldet'), expired: t('Sitzung abgelaufen') }[p.ssoState] ?? t('Nicht angemeldet'));
+/** Picker label: SSO profiles carry a badge and their login state. */
+const profileLabel = (p) => (p.sso ? `${p.name} · SSO (${ssoStateText(p)})` : p.name);
+/** Signs an SSO profile in before it is used; false if it is (still) not signed in. */
+async function ensureLogin(profileId) {
+  const profile = view.profiles.find((p) => p.id === profileId);
+  if (!profile?.sso || profile.ssoState === 'loggedIn') return true;
+  await call('sso_login', { profileId });
+  return view.profiles.find((p) => p.id === profileId)?.ssoState === 'loggedIn';
+}
 const locale = () => (navigator.language?.toLowerCase().startsWith(view.language) ? navigator.language : view.language);
 
 // MARK: Render
@@ -270,7 +281,7 @@ function budgetLine(budget) {
 function profileCard(profile) {
   const bindings = view.bindings.filter((b) => b.profileId === profile.id);
   const check = checks.get(profile.id) ?? {};
-  const keyColor = profile.hasKey ? 'var(--green)' : 'var(--red)';
+  const keyColor = credentialOk(profile) ? 'var(--green)' : 'var(--red)';
   const testConnection = async () => {
     checks.set(profile.id, { checking: true });
     renderMain();
@@ -284,12 +295,12 @@ function profileCard(profile) {
   return h('section', { class: 'card', 'aria-label': profile.name },
     h('div', { class: 'card-head' },
       h('div', { class: 'spacer' },
-        h('h2', null, profile.name, profile.managed && h('span', { class: 'badge' }, t('Von der IT vorgegeben'))),
+        h('h2', null, profile.name, profile.sso && h('span', { class: 'badge' }, 'SSO'), profile.managed && h('span', { class: 'badge' }, t('Von der IT vorgegeben'))),
         h('div', { class: 'muted selectable' }, profile.endpoint + (profile.modelAlias ? t(' · Modell %@', profile.modelAlias) : '')),
         tierModels(profile) && h('div', { class: 'mono muted' }, tierModels(profile))),
       button(t('Bearbeiten'), () => profileEditor(profile), { disabled: profile.managed }),
       button(t('Löschen'), () => deleteProfile(profile, bindings), { cls: 'danger', disabled: profile.managed })),
-    h('div', { class: 'key-row' },
+    profile.sso ? ssoRow(profile, testConnection, check) : h('div', { class: 'key-row' },
       h('span', { class: `chip ${profile.hasKey ? 'ok' : 'missing'}` }, icon(profile.hasKey ? 'key' : 'keyOff'),
         h('span', { class: profile.hasKey ? 'mono' : null }, profile.hasKey ? `Key ${profile.keyHint ?? '••••'}` : t('Kein Key hinterlegt – Anfragen schlagen fehl'))),
       h('span', { class: 'spacer' }),
@@ -309,6 +320,23 @@ function profileCard(profile) {
       bindings.length > 0 && h('div', { class: 'project-list' }, bindings.map((b) => projectRow(b, profile)))));
 }
 
+function ssoRow(profile, testConnection, check) {
+  const expiry = profile.ssoExpiresAt && profile.ssoExpiresAt * 1000 > Date.now()
+    ? new Date(profile.ssoExpiresAt * 1000).toLocaleString(locale()) : null;
+  const text = profile.ssoLoggingIn ? t('Anmeldung läuft – bitte im Browser abschließen …')
+    : profile.ssoState === 'loggedIn' ? (expiry ? t('Angemeldet, Token gültig bis %@', expiry) : t('Angemeldet'))
+      : ssoStateText(profile);
+  const ok = profile.ssoState === 'loggedIn';
+  return h('div', { class: 'key-row' },
+    h('span', { class: `chip ${ok ? 'ok' : 'missing'}` }, icon(ok ? 'key' : 'keyOff'), h('span', null, text)),
+    profile.ssoLoggingIn && h('span', { class: 'spinner', role: 'status', 'aria-label': t('Anmeldung läuft') }),
+    h('span', { class: 'spacer' }),
+    button(ok || profile.ssoState === 'expired' ? t('Neu anmelden') : t('Anmelden'), () => call('sso_login', { profileId: profile.id }),
+      { iconName: 'key', cls: ok ? null : 'primary', disabled: profile.ssoLoggingIn }),
+    button(t('Abmelden'), () => call('sso_logout', { profileId: profile.id }), { disabled: profile.ssoLoggingIn || profile.ssoState === 'loggedOut' }),
+    button(t('Verbindung prüfen'), testConnection, { disabled: check.checking || !ok }));
+}
+
 function statusAppearance(status, keyPresent) {
   if (!status) return ['question', 'muted'];
   if (status.health.state === 'folderMissing' || !keyPresent || status.conflicts.some((c) => c.blocking)) return ['error', 'red'];
@@ -316,7 +344,8 @@ function statusAppearance(status, keyPresent) {
   return ['check', 'green'];
 }
 
-function describeHealth(health, keyPresent) {
+function describeHealth(health, keyPresent, sso) {
+  if (!keyPresent && health?.state === 'active' && sso) return t('Nicht angemeldet – Claude-Anfragen schlagen fehl. Beim Profil „Anmelden“ wählen.');
   if (!keyPresent && health?.state === 'active') return t('Für das Profil ist kein Key hinterlegt – Claude-Anfragen schlagen fehl.');
   switch (health?.state) {
     case 'active': return t('Aktiv');
@@ -329,15 +358,18 @@ function describeHealth(health, keyPresent) {
 
 function projectRow(binding, profile) {
   const status = binding.status;
-  const keyPresent = profile.hasKey;
+  const keyPresent = credentialOk(profile);
   const [symbol, color] = statusAppearance(status, keyPresent);
   // Hidden: three clicks on the status icon switch the Budget-Killer on or off.
   const statusIcon = view.disabled ? h('span', { class: 'status-icon muted' }, icon('pause'))
-    : h('span', { class: `status-icon ${color}`, onclick: (e) => { if (e.detail === 3) call('toggle_pool', { bindingId: binding.id }); } }, icon(symbol));
+    : h('span', { class: `status-icon ${color}`, onclick: (e) => { if (e.detail === 3 && !profile.sso) call('toggle_pool', { bindingId: binding.id }); } }, icon(symbol));
   const select = h('select', {
     'aria-label': t('Profil'), title: t('Profil für dieses Projekt wechseln'), disabled: view.disabled,
-    onchange: (e) => call('bind', { folder: binding.path, profileId: e.target.value }),
-  }, view.profiles.map((p) => h('option', { value: p.id, selected: p.id === binding.profileId }, p.name)));
+    onchange: async (e) => {
+      if (await ensureLogin(e.target.value)) call('bind', { folder: binding.path, profileId: e.target.value });
+      else renderMain();
+    },
+  }, view.profiles.map((p) => h('option', { value: p.id, selected: p.id === binding.profileId }, profileLabel(p))));
   const confirmUnbind = async () => {
     if (await confirmDialog(t('Zuordnung für „%@“ entfernen?', binding.name),
       t('Nur die von der App gesetzten Einträge werden aus .claude/settings.local.json entfernt. Andere Einstellungen bleiben erhalten.'),
@@ -355,15 +387,17 @@ function projectRow(binding, profile) {
     binding.pooled && !view.disabled && h('div', { class: 'note red' }, icon('flame'),
       t('Budget-Killer: Nach dem Budget dieses Keys werden die Keys der anderen Profile am selben Gateway verbrannt.')),
     view.disabled ? h('div', { class: 'note muted' }, t('Deaktiviert – Claude nutzt hier die normale Anmeldung.'))
-      : !healthOk && h('div', { class: `note ${color}` }, describeHealth(status?.health, keyPresent)),
+      : !healthOk && h('div', { class: `note ${color}` }, describeHealth(status?.health, keyPresent, profile.sso)),
     (status?.conflicts ?? []).map((c) => h('div', { class: `note ${c.blocking ? 'red' : 'orange'}` },
       icon(c.blocking ? 'error' : 'warning'), h('span', { class: 'selectable' }, c.message))));
 }
 
 async function deleteProfile(profile, bindings) {
-  const message = bindings.length
-    ? t('Der Key wird gelöscht und %@ Projektzuordnung(en) werden zurückgenommen.', bindings.length)
-    : t('Der Key wird gelöscht.');
+  const message = profile.sso
+    ? (bindings.length ? t('Die SSO-Anmeldung wird entfernt und %@ Projektzuordnung(en) werden zurückgenommen.', bindings.length) : t('Die SSO-Anmeldung wird entfernt.'))
+    : bindings.length
+      ? t('Der Key wird gelöscht und %@ Projektzuordnung(en) werden zurückgenommen.', bindings.length)
+      : t('Der Key wird gelöscht.');
   if (await confirmDialog(t('Profil „%@“ löschen?', profile.name), message, t('Löschen'))) {
     checks.delete(profile.id);
     call('delete_profile', { profileId: profile.id });
@@ -451,14 +485,17 @@ function profileEditor(existing) {
     name: existing?.name ?? '', endpoint: existing?.endpoint ?? view.defaultEndpoint ?? '',
     modelAlias: existing?.modelAlias ?? view.defaultModelAlias ?? '', opusModel: existing?.opusModel ?? '',
     sonnetModel: existing?.sonnetModel ?? '', haikuModel: existing?.haikuModel ?? '',
-    environmentText: existing?.environmentText ?? '', key: '', models: [], loading: false, saving: false,
+    environmentText: existing?.environmentText ?? '', key: '', authType: existing?.sso ? 'oidc' : 'apiKey',
+    oidcIssuer: existing?.oidcIssuer ?? '', oidcClientId: existing?.oidcClientId ?? '', oidcScope: existing?.oidcScope ?? '', models: [], loading: false, saving: false,
   };
   const managed = existing?.managed ?? false;
   const dlg = openDialog(existing ? t('Bearbeiten') : t('Neues Profil'), (close) => {
     const host = endpointHost(s.endpoint);
     const allowed = !host || isHostAllowed(host);
     const invalid = invalidEnvironmentLines(s.environmentText);
-    const valid = s.name.trim() && host && allowed && (existing || s.key) && !invalid.length;
+    const sso = s.authType === 'oidc';
+    const issuerOk = !sso || /^https:\/\//i.test(s.oidcIssuer.trim()) || /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(s.oidcIssuer.trim());
+    const valid = s.name.trim() && host && allowed && (sso ? issuerOk && s.oidcClientId.trim() : existing || s.key) && !invalid.length;
     const update = (key) => (value) => { s[key] = value; dlg.render(); };
     const modelField = (label, key, id) => field(label, input({ value: s[key], placeholder: t('Claude-Standard'), list: 'gateway-models', disabled: managed }, update(key)), id);
     const loadModels = async () => {
@@ -487,8 +524,19 @@ function profileEditor(existing) {
           field(t('LiteLLM-Endpunkt'), input({ value: s.endpoint, placeholder: 'https://litellm.firma.intern' }, update('endpoint')), 'p-endpoint'),
           s.endpoint && !host && h('div', { class: 'field-note error-text' }, t('Bitte eine vollständige http(s)-URL angeben.')),
           host && !allowed && h('div', { class: 'field-note error-text' }, t('Host nicht freigegeben. Erlaubt: %@', view.allowedHosts.join(', ')))),
-        managed && h('div', { class: 'section-note' }, t('Von der IT vorgegeben – nur der Key kann geändert werden.')),
-        h('fieldset', null,
+        managed && h('div', { class: 'section-note' }, sso ? t('Von der IT vorgegeben – nur die Anmeldung ist möglich.') : t('Von der IT vorgegeben – nur der Key kann geändert werden.')),
+        h('fieldset', { disabled: !!existing },
+          field(t('Anmeldung'), h('select', { onchange: (e) => { s.authType = e.target.value; dlg.render(); } },
+            h('option', { value: 'apiKey', selected: !sso }, t('Key')),
+            h('option', { value: 'oidc', selected: sso }, 'SSO')), 'p-auth')),
+        sso ? h('fieldset', { disabled: managed },
+          field(t('Issuer'), input({ value: s.oidcIssuer, placeholder: 'https://login.microsoftonline.com/<tenant>/v2.0' }, update('oidcIssuer')), 'p-issuer'),
+          s.oidcIssuer.trim() && !issuerOk && h('div', { class: 'field-note error-text' }, t('Die SSO-Adresse muss https verwenden: %@', s.oidcIssuer.trim())),
+          field(t('Client-ID'), input({ value: s.oidcClientId }, update('oidcClientId')), 'p-client'),
+          field(t('Scope'), input({ value: s.oidcScope, placeholder: 'openid profile offline_access' }, update('oidcScope')), 'p-scope'),
+          h('div', { class: 'section-note' }, t('Nach dem Anlegen im Profil „Anmelden“ wählen. Tokens liegen nur lokal in einer Datei, die nur dein Benutzerkonto lesen kann. Wird Issuer oder Client-ID geändert, wirst du abgemeldet.')),
+          h('div', { class: 'section-note' }, t('SSO-Profile haben keinen Key und nehmen nicht am Budget-Killer-Pool teil.')))
+        : h('fieldset', null,
           field(existing ? t('Neuer Key') : t('Key'), input({ type: 'password', value: s.key,
             placeholder: existing ? t('leer lassen, um den Key zu behalten') : 'sk-…' }, update('key')), 'p-key'),
           h('div', { class: 'section-note' }, t('Der Key wird nur lokal in einer Datei gespeichert, die nur dein Benutzerkonto lesen kann – nie im Projekt.'))),
@@ -498,7 +546,7 @@ function profileEditor(existing) {
           h('datalist', { id: 'gateway-models' }, s.models.map((m) => h('option', { value: m }))),
           h('div', { class: 'line' },
             button(t('Modelle vom Gateway laden'), loadModels,
-              { disabled: managed || !host || !allowed || s.loading || (!existing && !s.key) }),
+              { disabled: managed || !host || !allowed || s.loading || (sso ? !existing : !existing && !s.key) }),
             s.loading && h('span', { class: 'muted' }, '…'),
             s.models.length > 0 && h('span', { class: 'muted small' }, t('%@ Modelle verfügbar', s.models.length))),
           h('div', { class: 'section-note' }, t('Eigene Modellnamen des Gateways für die Modellstufen von Claude Code. Leer lassen, um den Claude-Standard zu verwenden.'))),
@@ -558,11 +606,11 @@ function addProjectDialog(preselected) {
           t('Der Ordner gehört zum Git-Repository %@. Claude Code liest Projekteinstellungen nur dort; die Zuordnung gilt für das ganze Repository inkl. Unterordnern und Worktrees.', s.picked.root)),
         field(t('Profil'), h('select', { onchange: (e) => { s.profileId = e.target.value; dlg.render(); } },
           h('option', { value: '', selected: !s.profileId }, t('Bitte wählen')),
-          view.profiles.map((p) => h('option', { value: p.id, selected: p.id === s.profileId }, p.name))), 'a-profile'),
+          view.profiles.map((p) => h('option', { value: p.id, selected: p.id === s.profileId }, profileLabel(p)))), 'a-profile'),
         existing && h('div', { class: 'note' }, icon('rotate', 'accent'), t('Bereits Profil „%@“ zugeordnet – wird umgestellt.', profileName(existing))),
       ],
       actions: [button(t('Abbrechen'), close),
-        button(t('Zuordnen'), () => { close(); call('bind', { folder: s.picked.folder, profileId: s.profileId }); },
+        button(t('Zuordnen'), async () => { close(); if (await ensureLogin(s.profileId)) call('bind', { folder: s.picked.folder, profileId: s.profileId }); },
           { cls: 'primary', disabled: !s.picked || !s.profileId })],
     };
   });
@@ -649,11 +697,11 @@ function claudeSettingsDialog() {
         h('fieldset', null, h('legend', null, t('Standardprofil für alle übrigen Ordner')),
           field(t('Standardprofil'), h('select', { onchange: (e) => { selected = e.target.value; dlg.render(); } },
             h('option', { value: '', selected: !selected }, t('Keins')),
-            view.profiles.map((p) => h('option', { value: p.id, selected: p.id === selected }, p.name))), 'c-profile'),
+            view.profiles.map((p) => h('option', { value: p.id, selected: p.id === selected }, profileLabel(p)))), 'c-profile'),
           healthText && h('div', { class: `finding ${health.state === 'active' ? 'green' : 'orange'}` },
             icon(health.state === 'active' ? 'check' : 'warning'), healthText),
           h('div', { class: 'line' }, h('span', { class: 'spacer' }),
-            button(t('Übernehmen'), () => call('set_global_profile', { profileId: selected || null }),
+            button(t('Übernehmen'), async () => { if (!selected || await ensureLogin(selected)) call('set_global_profile', { profileId: selected || null }); },
               { disabled: unchanged || (!selected && !view.globalProfileId) || view.disabled })),
           h('div', { class: 'section-note' }, t('Trägt das Profil in ~/.claude/settings.json ein. Claude Code nutzt es in allen Ordnern ohne eigene Zuordnung, statt auf einen Klartext-Key oder die normale Anmeldung zurückzufallen. Zugeordnete Projekte behalten ihr eigenes Profil.'))),
       ],
