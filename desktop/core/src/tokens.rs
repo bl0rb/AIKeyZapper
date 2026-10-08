@@ -1,4 +1,5 @@
 use crate::errors::{Error, Result};
+use crate::models::OidcTokenType;
 use crate::paths;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -9,11 +10,15 @@ use std::path::PathBuf;
 #[serde(rename_all = "camelCase")]
 pub struct TokenSet {
     pub refresh_token: String,
+    /// Bearer token for the gateway: the access token, or the ID token for `OidcTokenType::Id`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub access_token: Option<String>,
-    /// Unix seconds at which the access token expires.
+    /// Unix seconds at which that token expires.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<i64>,
+    /// Kind of `access_token`; a profile whose token type changed never gets the old kind.
+    #[serde(default, skip_serializing_if = "OidcTokenType::is_access")]
+    pub token_type: OidcTokenType,
 }
 
 /// SSO tokens by profile ID in `sso-tokens.json` next to `keys.json`, same protection (owner-only file).

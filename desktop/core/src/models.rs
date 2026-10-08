@@ -34,6 +34,21 @@ pub enum AuthType {
     Oidc,
 }
 
+/// Which token of the OIDC token response an SSO profile hands to the gateway as bearer token.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OidcTokenType {
+    #[default]
+    Access,
+    Id,
+}
+
+impl OidcTokenType {
+    pub fn is_access(&self) -> bool {
+        *self == Self::Access
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Profile {
@@ -65,6 +80,9 @@ pub struct Profile {
     pub oidc_client_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oidc_scope: Option<String>,
+    /// `access` (default) or `id`: the gateway expects the OIDC ID token instead of the access token.
+    #[serde(default, skip_serializing_if = "OidcTokenType::is_access")]
+    pub oidc_token_type: OidcTokenType,
 }
 
 fn placeholder_credential() -> CredentialReference {
@@ -82,7 +100,8 @@ impl Profile {
     pub fn new(id: String, name: String, endpoint: String, model_alias: String) -> Self {
         let credential = CredentialReference::for_id(&id);
         Self { id, name, endpoint, model_alias, opus_model: None, sonnet_model: None, haiku_model: None, environment: None, credential,
-               auth_type: AuthType::ApiKey, oidc_issuer: None, oidc_client_id: None, oidc_scope: None }
+               auth_type: AuthType::ApiKey, oidc_issuer: None, oidc_client_id: None, oidc_scope: None,
+               oidc_token_type: OidcTokenType::Access }
     }
 
     pub fn is_sso(&self) -> bool {

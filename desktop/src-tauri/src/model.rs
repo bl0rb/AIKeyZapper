@@ -8,7 +8,7 @@ use keyzapper_core::gateway::KeyBudget;
 use keyzapper_core::keys::{masked_hint, KeyStore};
 use keyzapper_core::managed::{host_of, ManagedConfig};
 use keyzapper_core::metadata::MetadataStore;
-use keyzapper_core::models::{new_id, parse_id, AppState, AuthType, Profile, WorkspaceBinding};
+use keyzapper_core::models::{new_id, parse_id, AppState, AuthType, OidcTokenType, Profile, WorkspaceBinding};
 use keyzapper_core::paths::{abbreviate_home, folder_name};
 use keyzapper_core::settings::{self, BindingHealth, BindingStatus, SettingsBinder};
 use keyzapper_core::update::ReleaseInfo;
@@ -70,6 +70,7 @@ pub struct ProfileInput {
     pub oidc_issuer: String,
     pub oidc_client_id: String,
     pub oidc_scope: String,
+    pub oidc_token_type: OidcTokenType,
 }
 
 fn non_empty(value: &str) -> Option<String> {
@@ -193,6 +194,7 @@ impl Model {
             profile.oidc_issuer = managed.oidc_issuer.clone();
             profile.oidc_client_id = managed.oidc_client_id.clone();
             profile.oidc_scope = managed.oidc_scope.clone();
+            profile.oidc_token_type = managed.oidc_token_type;
             if self.state.profile(&managed.id) != Some(&profile) {
                 self.save_profile(profile, None);
             }
@@ -262,6 +264,7 @@ impl Model {
                 profile.oidc_issuer = Some(input.oidc_issuer.trim().to_string());
                 profile.oidc_client_id = Some(input.oidc_client_id.trim().to_string());
                 profile.oidc_scope = non_empty(&input.oidc_scope);
+                profile.oidc_token_type = input.oidc_token_type;
             }
         }
         self.save_profile(profile, (!sso).then_some(input.key))
@@ -792,6 +795,7 @@ impl Model {
                         oidc_issuer: p.oidc_issuer.clone(),
                         oidc_client_id: p.oidc_client_id.clone(),
                         oidc_scope: p.oidc_scope.clone(),
+                        oidc_token_type: p.oidc_token_type,
                         sso_state: p.is_sso().then_some(if self.sso_expired.contains(&p.id) {
                             "expired"
                         } else if session.is_some() {
@@ -943,6 +947,7 @@ struct ProfileView {
     oidc_issuer: Option<String>,
     oidc_client_id: Option<String>,
     oidc_scope: Option<String>,
+    oidc_token_type: OidcTokenType,
     /// `loggedIn`, `loggedOut` or `expired` for SSO profiles.
     sso_state: Option<&'static str>,
     sso_expires_at: Option<i64>,
