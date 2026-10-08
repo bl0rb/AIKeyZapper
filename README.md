@@ -59,6 +59,32 @@ helper cache expires (default 5 min), after an HTTP 401, or after a restart.
 
 **If a key is missing** or blocked, requests fail. Claude Code never falls back to other credentials.
 
+## SSO profiles
+
+Profiles can authenticate via a static LiteLLM key (Key type) or via OIDC login (SSO type). SSO requires
+an OIDC-verifying proxy in front of LiteLLM that validates the access token and injects the virtual key into requests.
+
+**SSO fields:** Issuer (https URL), Client ID (public client, no secret), Scope (default `openid profile offline_access`).
+For Microsoft Entra ID use scope `api://<app-id>/.default offline_access`; a refresh token is required.
+
+**Login:** *Sign In* opens the system browser for Authorization Code flow with PKCE. The redirect URI is a loopback address
+`http://127.0.0.1:<random port>/callback`. To register the redirect URI:
+
+* **Microsoft Entra ID:** App registration › Mobile and desktop applications › Redirect URI: `http://127.0.0.1`
+  (Entra ignores the port for loopback redirects).
+* **Keycloak:** Public client › Standard flow › PKCE S256 › Valid redirect URI: `http://127.0.0.1/*`.
+
+**Tokens:** Refresh and access tokens are stored locally in `sso-tokens.json` in the app data folder (owner-only, `0600`),
+never in backups or via "copy key". The helper returns a cached access token or refreshes it once, serialized safely across parallel
+sessions. Exit code 67 means the session expired; sign in again in KeyZapper.
+
+**Settings:** Set `CLAUDE_CODE_API_KEY_HELPER_TTL_MS` in the profile's Environment field to a value below the token lifetime
+(e.g., 900000 for 60–90 min tokens). For long streams over a gateway, also set `API_TIMEOUT_MS`,
+`CLAUDE_STREAM_IDLE_TIMEOUT_MS`, `CLAUDE_STREAM_FIRST_BYTE_TIMEOUT_MS`.
+
+**Limitations:** SSO profiles do not support Budget-Killer pool, budget display, or key copying. Model loading and test connection
+use the access token.
+
 ## How it works
 
 **Setup (once):** The key goes to the helper via stdin and ends up only in the Keychain. The app writes only references into the project.
@@ -75,7 +101,7 @@ The app writes to `<project>/.claude/settings.local.json`:
 
 | Key | Value |
 |---|---|
-| `apiKeyHelper` | `'/Applications/KeyZapper.app/Contents/Helpers/keyzapper-helper' credential --profile <UUID>` |
+| `apiKeyHelper` | `'/Applications/KeyZapper.app/Contents/Helpers/keyzapper-helper' credential --profile <UUID>` (Key and SSO profiles) |
 | `env.ANTHROPIC_BASE_URL` | LiteLLM endpoint of the profile |
 | `env.ANTHROPIC_DEFAULT_OPUS_MODEL`, `…_SONNET_MODEL`, `…_HAIKU_MODEL`, `env.ANTHROPIC_MODEL` | Gateway model names of the profile (if set), e.g. `eu.anthropic.claude-sonnet-5-…` |
 | further `env.*` | Additional environment variables of the profile, e.g. `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1` for Bedrock via LiteLLM |
@@ -98,6 +124,7 @@ never via arguments or logs.
 | 64 | usage |
 | 65 | unknown profile |
 | 66 | key missing |
+| 67 | session expired (SSO only; sign in again) |
 | 70 | internal |
 | 77 | Keychain locked/denied |
 | 78 | metadata corrupt or endpoint not in `AllowedGatewayHosts` |
@@ -127,10 +154,14 @@ then delete `/Applications/KeyZapper.app`.
 Template for the Property list file: [docs/intune/io.github.bl0rb.keyzapper.plist](docs/intune/io.github.bl0rb.keyzapper.plist). It contains only
 key-value pairs without the `<plist>`/`<dict>` wrapper, as Intune requires.
 
+**Important:** For users receiving SSO profiles via managed settings, do not set `apiKeyHelper`, `env.ANTHROPIC_BASE_URL`,
+`ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` in `managed-settings.json` (or `managed-settings.d/*.json`). Managed settings
+outrank project settings; KeyZapper aborts binding on conflict.
+
 | Key | Type | Effect |
 |---|---|---|
-| `ManagedProfiles` | Array of dicts: `Name`, `Endpoint`, optional `OpusModel`, `SonnetModel`, `HaikuModel`, `ModelAlias`, `Environment` (dict), `ID` | Profiles are created automatically and cannot be edited or deleted; developers only enter the key. Without `ID` the profile ID is derived from `Name`, so renaming creates a new profile. |
-| `AllowedGatewayHosts` | Array of strings (`host` or `*.domain`) | Profiles only for these hosts. The helper does not release keys for other hosts (exit 78). Empty means no restriction. |
+| `ManagedProfiles` | Array of dicts: `Name`, `Endpoint`, optional `OpusModel`, `SonnetModel`, `HaikuModel`, `ModelAlias`, `Environment` (dict), `ID`, `Type` (`apiKey` default or `oidc`), `OIDCIssuer`, `OIDCClientID`, `OIDCScope` | Profiles are created automatically and cannot be edited or deleted; developers only enter the key (or sign in for SSO). Without `ID` the profile ID is derived from `Name`, so renaming creates a new profile. For SSO (`oidc` type), `OIDCIssuer` and `OIDCClientID` are required; `OIDCScope` defaults to `openid profile offline_access`. |
+| `AllowedGatewayHosts` | Array of strings (`host` or `*.domain`) | Profiles only for these hosts. The helper does not release keys for other hosts (exit 78). Applies to the gateway host only; the IdP host need not be listed. Empty means no restriction. |
 | `DefaultEndpoint`, `DefaultModelAlias` | String | Prefill when creating your own profiles |
 | `MinimumClaudeCodeVersion` | String | Threshold for the warning about outdated Claude CLIs (default 2.1.288) |
 | `OneDriveBackup` | Bool | Backup of profiles and assignments to OneDrive (see below) |
