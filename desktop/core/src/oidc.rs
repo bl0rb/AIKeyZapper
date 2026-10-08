@@ -1,9 +1,9 @@
 //! OIDC sign-in (authorization code + PKCE, loopback redirect, public client) and token refresh for SSO profiles.
-//! The gateway verifies the OIDC access token; KeyZapper only obtains and refreshes it. Messages never contain
-//! token material.
+//! The gateway verifies the OIDC access token (or the ID token, per profile); KeyZapper only obtains and refreshes it.
+//! Messages never contain token material.
 
 use crate::errors::{Error, Result};
-use crate::models::Profile;
+use crate::models::{OidcTokenType, Profile};
 use crate::tokens::{TokenSet, TokenStore};
 use crate::{gateway, l};
 use aes_gcm::aead::rand_core::RngCore;
@@ -122,8 +122,16 @@ fn post_form(url: &str, fields: &[(&str, &str)]) -> Result<(u16, Value)> {
     Ok((status, json))
 }
 
+/// `exp` claim of a JWT, read without verifying the signature (the token comes straight from the token endpoint).
+fn jwt_exp(token: &str) -> Option<i64> {
+    let payload = B64URL.decode(token.split('.').nth(1)?.trim_end_matches('=')).ok()?;
+    let exp = serde_json::from_slice::<Value>(&payload).ok()?.get("exp")?.clone();
+    exp.as_i64().or_else(|| exp.as_f64().map(|v| v as i64))
+}
+
 /// Token endpoint reply -> tokens. 400/401 (`invalid_grant` & co) mean the session is over.
-fn token_response(profile_id: &str, status: u16, json: &Value, previous_refresh: Option<&str>, now: i64) -> Result<TokenSet> {
+/// For `OidcTokenType::Id` the ID token is kept and expires per its `exp` claim (`expires_in` is the access token's).
+fn token_response(profile_id: &str, kind: OidcTokenType, status: u16, json: &Value, previous_refresh: Option<&str>, now: i64) -> Result<TokenSet> {
     if status == 400 || status == 401 {
         return Err(Error::SessionExpired(profile_id.to_string()));
     }
@@ -131,12 +139,18 @@ fn token_response(profile_id: &str, status: u16, json: &Value, previous_refresh:
         return Err(fail(l!("Token-Endpunkt antwortete mit HTTP %@.", status)));
     }
     let text = |name: &str| json.get(name).and_then(Value::as_str).filter(|v| !v.is_empty()).map(String::from);
-    let Some(access_token) = text("access_token") else { return Err(fail(l!("Die Antwort enthält kein Access-Token."))) };
+    let token = match kind {
+        OidcTokenType::Access => text("access_token").ok_or_else(|| fail(l!("Die Antwort enthält kein Access-Token.")))?,
+        OidcTokenType::Id => text("id_token").ok_or_else(|| fail(l!("Die Antwort enthält kein ID-Token. Der Scope muss „openid“ enthalten (bei Entra ID zusätzlich „profile“).")))?,
+    };
     let Some(refresh_token) = text("refresh_token").or_else(|| previous_refresh.map(String::from)) else {
         return Err(fail(l!("Kein Refresh-Token erhalten. Bei Entra ID muss der Scope „offline_access“ enthalten sein.")));
     };
-    let expires_in = json.get("expires_in").and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse().ok())).unwrap_or(3600);
-    Ok(TokenSet { refresh_token, access_token: Some(access_token), expires_at: Some(now + expires_in) })
+    let expires_at = match kind {
+        OidcTokenType::Access => now + json.get("expires_in").and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse().ok())).unwrap_or(3600),
+        OidcTokenType::Id => jwt_exp(&token).ok_or_else(|| fail(l!("Das ID-Token enthält kein gültiges Ablaufdatum (exp).")))?,
+    };
+    Ok(TokenSet { refresh_token, access_token: Some(token), expires_at: Some(expires_at), token_type: kind })
 }
 
 /// Seconds an access token must stay valid to be handed out: Claude Code's helper TTL plus 60 s.
@@ -151,18 +165,18 @@ fn margin_secs(profile: &Profile) -> i64 {
     ttl_ms / 1000 + 60
 }
 
-fn cached(tokens: &TokenSet, now: i64, margin: i64) -> Option<String> {
+fn cached(tokens: &TokenSet, kind: OidcTokenType, now: i64, margin: i64) -> Option<String> {
     match (&tokens.access_token, tokens.expires_at) {
-        (Some(token), Some(expires)) if !token.is_empty() && expires - now > margin => Some(token.clone()),
+        (Some(token), Some(expires)) if tokens.token_type == kind && !token.is_empty() && expires - now > margin => Some(token.clone()),
         _ => None,
     }
 }
 
-/// Access token for the gateway: the cached one while it stays valid long enough, otherwise exactly one
+/// Bearer token for the gateway (access or ID token per profile): the cached one while it stays valid long enough, otherwise exactly one
 /// refresh grant (serialised across processes by a lock file; the store is re-read after taking the lock).
 pub fn access_token(profile: &Profile, store: &TokenStore, now: i64) -> Result<String> {
-    let margin = margin_secs(profile);
-    if let Some(token) = store.read(&profile.id)?.as_ref().and_then(|t| cached(t, now, margin)) {
+    let (margin, kind) = (margin_secs(profile), profile.oidc_token_type);
+    if let Some(token) = store.read(&profile.id)?.as_ref().and_then(|t| cached(t, kind, now, margin)) {
         return Ok(token);
     }
     let config = config(profile)?;
@@ -175,7 +189,7 @@ pub fn access_token(profile: &Profile, store: &TokenStore, now: i64) -> Result<S
     let Some(tokens) = store.read(&profile.id)?.filter(|t| !t.refresh_token.is_empty()) else {
         return Err(Error::SessionExpired(profile.id.clone()));
     };
-    if let Some(token) = cached(&tokens, now, margin) {
+    if let Some(token) = cached(&tokens, kind, now, margin) {
         return Ok(token);
     }
     let discovery = discover(config.issuer)?;
@@ -183,7 +197,7 @@ pub fn access_token(profile: &Profile, store: &TokenStore, now: i64) -> Result<S
         &discovery.token_endpoint,
         &[("grant_type", "refresh_token"), ("refresh_token", &tokens.refresh_token), ("client_id", config.client_id), ("scope", &config.scope)],
     )?;
-    let fresh = token_response(&profile.id, status, &json, Some(&tokens.refresh_token), now)?;
+    let fresh = token_response(&profile.id, kind, status, &json, Some(&tokens.refresh_token), now)?;
     store.write(&profile.id, &fresh)?;
     Ok(fresh.access_token.unwrap_or_default())
 }
@@ -222,7 +236,7 @@ pub fn login(profile: &Profile, store: &TokenStore, open_browser: impl FnOnce(&s
     if status == 400 || status == 401 {
         return Err(fail(l!("Der Identity Provider hat die Anmeldung abgelehnt (HTTP %@).", status)));
     }
-    store.write(&profile.id, &token_response(&profile.id, status, &json, None, unix_now())?)
+    store.write(&profile.id, &token_response(&profile.id, profile.oidc_token_type, status, &json, None, unix_now())?)
 }
 
 fn wait_for_callback(listener: &TcpListener, state: &str, deadline: Instant) -> Result<String> {
@@ -359,7 +373,8 @@ mod tests {
         (base, log)
     }
 
-    fn idp(token_status: u16, token_body: &'static str) -> (String, Arc<Mutex<Vec<String>>>) {
+    fn idp(token_status: u16, token_body: impl Into<String>) -> (String, Arc<Mutex<Vec<String>>>) {
+        let token_body = token_body.into();
         let base = Arc::new(Mutex::new(String::new()));
         let shared = base.clone();
         let (url, log) = mock(move |path, _| {
@@ -367,7 +382,7 @@ mod tests {
             if path.ends_with("/.well-known/openid-configuration") {
                 (200, format!(r#"{{"issuer":"{base}/","authorization_endpoint":"{base}/authorize","token_endpoint":"{base}/token"}}"#))
             } else {
-                (token_status, token_body.to_string())
+                (token_status, token_body.clone())
             }
         });
         *base.lock().unwrap() = url.clone();
@@ -388,7 +403,16 @@ mod tests {
     }
 
     fn tokens(access: Option<&str>, expires_at: Option<i64>) -> TokenSet {
-        TokenSet { refresh_token: "R1".into(), access_token: access.map(String::from), expires_at }
+        TokenSet { refresh_token: "R1".into(), access_token: access.map(String::from), expires_at, token_type: OidcTokenType::Access }
+    }
+
+    /// Unsigned JWT with the given payload (KeyZapper only reads `exp`).
+    fn jwt(payload: &str) -> String {
+        format!("eyJhbGciOiJub25lIn0.{}.sig", B64URL.encode(payload))
+    }
+
+    fn token_posts(log: &Arc<Mutex<Vec<String>>>) -> usize {
+        log.lock().unwrap().iter().filter(|l| l.starts_with("/token")).count()
     }
 
     #[test]
@@ -545,5 +569,69 @@ mod tests {
         );
         assert!(matches!(result, Err(Error::Oidc(m)) if m.contains("offline_access")));
         assert!(store.read(&p.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn id_token_profile_refreshes_to_id_token_expiring_per_exp() {
+        let id = jwt(r#"{"exp":5000,"oid":"o1"}"#);
+        let (url, log) = idp(200, format!(r#"{{"access_token":"A2","id_token":"{id}","refresh_token":"R2","expires_in":3600}}"#));
+        let (store, mut p) = (store(), profile(&url));
+        p.oidc_token_type = OidcTokenType::Id;
+        store.write(&p.id, &tokens(None, None)).unwrap();
+        assert_eq!(access_token(&p, &store, 1_000).unwrap(), id);
+        let saved = store.read(&p.id).unwrap().unwrap();
+        assert_eq!((saved.expires_at, saved.token_type), (Some(5_000), OidcTokenType::Id));
+        assert_eq!(access_token(&p, &store, 1_001).unwrap(), id);
+        assert_eq!(token_posts(&log), 1);
+    }
+
+    #[test]
+    fn id_token_profile_fails_without_usable_id_token() {
+        let (url, _) = idp(200, r#"{"access_token":"A2","refresh_token":"R2","expires_in":3600}"#);
+        let (store, mut p) = (store(), profile(&url));
+        p.oidc_token_type = OidcTokenType::Id;
+        store.write(&p.id, &tokens(None, None)).unwrap();
+        assert!(matches!(access_token(&p, &store, 0), Err(Error::Oidc(m)) if m.contains("openid")));
+        let (url, _) = idp(200, format!(r#"{{"id_token":"{}","expires_in":3600}}"#, jwt(r#"{"oid":"o1"}"#)));
+        p.oidc_issuer = Some(url);
+        assert!(matches!(access_token(&p, &store, 0), Err(Error::Oidc(m)) if m.contains("exp")));
+        assert_eq!(store.read(&p.id).unwrap().unwrap(), tokens(None, None));
+    }
+
+    #[test]
+    fn changed_token_type_never_hands_out_the_old_kind() {
+        let id = jwt(r#"{"exp":10000}"#);
+        let (url, log) = idp(200, format!(r#"{{"access_token":"A2","id_token":"{id}","expires_in":3600}}"#));
+        let (store, mut p) = (store(), profile(&url));
+        store.write(&p.id, &tokens(Some("A1"), Some(10_000))).unwrap();
+        p.oidc_token_type = OidcTokenType::Id;
+        assert_eq!(access_token(&p, &store, 1_000).unwrap(), id);
+        p.oidc_token_type = OidcTokenType::Access;
+        assert_eq!(access_token(&p, &store, 1_000).unwrap(), "A2");
+        assert_eq!(token_posts(&log), 2);
+    }
+
+    #[test]
+    fn login_stores_id_token_for_id_token_profile() {
+        let id = jwt(r#"{"exp":4102444800,"oid":"o1"}"#);
+        let (url, _) = idp(200, format!(r#"{{"access_token":"A1","id_token":"{id}","refresh_token":"R1","expires_in":600}}"#));
+        let (store, mut p) = (store(), profile(&url));
+        p.oidc_token_type = OidcTokenType::Id;
+        login(
+            &p,
+            &store,
+            |auth| {
+                let q: std::collections::HashMap<_, _> = url::Url::parse(auth).unwrap().query_pairs().into_owned().collect();
+                let callback = format!("{}?code=C&state={}", q["redirect_uri"], q["state"]);
+                std::thread::spawn(move || {
+                    let _ = ureq::get(&callback).call();
+                });
+                Ok(())
+            },
+            Duration::from_secs(10),
+        )
+        .unwrap();
+        let saved = store.read(&p.id).unwrap().unwrap();
+        assert_eq!((saved.access_token, saved.expires_at, saved.token_type), (Some(id), Some(4_102_444_800), OidcTokenType::Id));
     }
 }

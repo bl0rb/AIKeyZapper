@@ -486,7 +486,8 @@ function profileEditor(existing) {
     modelAlias: existing?.modelAlias ?? view.defaultModelAlias ?? '', opusModel: existing?.opusModel ?? '',
     sonnetModel: existing?.sonnetModel ?? '', haikuModel: existing?.haikuModel ?? '',
     environmentText: existing?.environmentText ?? '', key: '', authType: existing?.sso ? 'oidc' : 'apiKey',
-    oidcIssuer: existing?.oidcIssuer ?? '', oidcClientId: existing?.oidcClientId ?? '', oidcScope: existing?.oidcScope ?? '', models: [], loading: false, saving: false,
+    oidcIssuer: existing?.oidcIssuer ?? '', oidcClientId: existing?.oidcClientId ?? '', oidcScope: existing?.oidcScope ?? '',
+    oidcTokenType: existing?.oidcTokenType ?? 'access', models: [], loading: false, saving: false,
   };
   const managed = existing?.managed ?? false;
   const dlg = openDialog(existing ? t('Bearbeiten') : t('Neues Profil'), (close) => {
@@ -534,6 +535,9 @@ function profileEditor(existing) {
           s.oidcIssuer.trim() && !issuerOk && h('div', { class: 'field-note error-text' }, t('Die SSO-Adresse muss https verwenden: %@', s.oidcIssuer.trim())),
           field(t('Client-ID'), input({ value: s.oidcClientId }, update('oidcClientId')), 'p-client'),
           field(t('Scope'), input({ value: s.oidcScope, placeholder: 'openid profile offline_access' }, update('oidcScope')), 'p-scope'),
+          field(t('Token-Art'), h('select', { onchange: (e) => { s.oidcTokenType = e.target.value; } },
+            h('option', { value: 'access', selected: s.oidcTokenType !== 'id' }, t('Access-Token')),
+            h('option', { value: 'id', selected: s.oidcTokenType === 'id' }, t('ID-Token'))), 'p-token-type'),
           h('div', { class: 'section-note' }, t('Nach dem Anlegen im Profil „Anmelden“ wählen. Tokens liegen nur lokal in einer Datei, die nur dein Benutzerkonto lesen kann. Wird Issuer oder Client-ID geändert, wirst du abgemeldet.')),
           h('div', { class: 'section-note' }, t('SSO-Profile haben keinen Key und nehmen nicht am Budget-Killer-Pool teil.')))
         : h('fieldset', null,

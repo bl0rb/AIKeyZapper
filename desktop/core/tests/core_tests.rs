@@ -433,7 +433,7 @@ fn token_store_round_trips_and_stays_out_of_keys_file() {
     let dir = temp_dir("tokens");
     let tokens = TokenStore { file: Path::new(&dir).join("sso-tokens.json") };
     assert!(!tokens.exists(BETA).unwrap());
-    tokens.write(BETA, &TokenSet { refresh_token: "R".into(), access_token: Some("A".into()), expires_at: Some(5) }).unwrap();
+    tokens.write(BETA, &TokenSet { refresh_token: "R".into(), access_token: Some("A".into()), expires_at: Some(5), token_type: Default::default() }).unwrap();
     assert!(tokens.exists(BETA).unwrap());
     assert_eq!(tokens.read(BETA).unwrap().unwrap().access_token.as_deref(), Some("A"));
     assert!(!Path::new(&dir).join("keys.json").exists());
@@ -453,7 +453,7 @@ fn sso_helper_exit_codes() {
     assert_eq!(h.run(&args("credential", BETA), String::new).exit_code, ExitCode::SessionExpired);
     assert_eq!(ExitCode::SessionExpired as i32, 67);
     // Cached, still valid access token.
-    h.tokens.write(BETA, &TokenSet { refresh_token: "R".into(), access_token: Some("jwt-1".into()), expires_at: Some(far_future()) }).unwrap();
+    h.tokens.write(BETA, &TokenSet { refresh_token: "R".into(), access_token: Some("jwt-1".into()), expires_at: Some(far_future()), token_type: Default::default() }).unwrap();
     let out = h.run(&args("credential", BETA), String::new);
     assert_eq!((out.exit_code, out.stdout.as_str()), (ExitCode::Ok, "jwt-1"));
     assert_eq!(h.run(&args("status", BETA), String::new).exit_code, ExitCode::Ok);
@@ -498,7 +498,7 @@ fn sso_profiles_are_never_bound_with_pool() {
 fn backup_keeps_sso_metadata_but_never_tokens() {
     let dir = temp_dir("sso-backup");
     let tokens = TokenStore { file: Path::new(&dir).join("sso-tokens.json") };
-    tokens.write(BETA, &TokenSet { refresh_token: "refresh-secret".into(), access_token: Some("access-secret".into()), expires_at: Some(1) }).unwrap();
+    tokens.write(BETA, &TokenSet { refresh_token: "refresh-secret".into(), access_token: Some("access-secret".into()), expires_at: Some(1), token_type: Default::default() }).unwrap();
     let mut payload = payload();
     payload.state.profiles.push(sso());
     let plain = serde_json::to_string(&payload).unwrap();

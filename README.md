@@ -69,10 +69,13 @@ helper cache expires (default 5 min), after an HTTP 401, or after a restart.
 ## SSO profiles
 
 Profiles can authenticate via a static LiteLLM key (Key type) or via OIDC login (SSO type). SSO requires
-an OIDC-verifying proxy in front of LiteLLM that validates the access token and injects the virtual key into requests.
+an OIDC-verifying proxy in front of LiteLLM that validates the token (access token by default) and injects the virtual key into requests.
 
-**SSO fields:** Issuer (https URL), Client ID (public client, no secret), Scope (default `openid profile offline_access`).
-For Microsoft Entra ID use scope `api://<app-id>/.default offline_access`; a refresh token is required.
+**SSO fields:** Issuer (https URL), Client ID (public client, no secret), Scope (default `openid profile offline_access`),
+Token type (*Access token* default, or *ID token* for gateways that expect the OIDC ID token as bearer token).
+For Microsoft Entra ID use scope `api://<app-id>/.default offline_access` with access tokens; a refresh token is required.
+With ID tokens the scope must include `openid` (Entra ID: also `profile`, otherwise the `oid` claim is missing) and `offline_access`;
+the token's expiry comes from its `exp` claim.
 
 **Login:** *Sign In* opens the system browser for Authorization Code flow with PKCE. The redirect URI is a loopback address
 `http://127.0.0.1:<random port>/callback`. To register the redirect URI:
@@ -171,7 +174,7 @@ outrank project settings; KeyZapper aborts binding on conflict.
 
 | Key | Type | Effect |
 |---|---|---|
-| `ManagedProfiles` | Array of dicts: `Name`, `Endpoint`, optional `OpusModel`, `SonnetModel`, `HaikuModel`, `ModelAlias`, `Environment` (dict), `ID`, `Type` (`apiKey` default or `oidc`), `OIDCIssuer`, `OIDCClientID`, `OIDCScope` | Profiles are created automatically and cannot be edited or deleted; developers only enter the key (or sign in for SSO). Without `ID` the profile ID is derived from `Name`, so renaming creates a new profile. For SSO (`oidc` type), `OIDCIssuer` and `OIDCClientID` are required; `OIDCScope` defaults to `openid profile offline_access`. |
+| `ManagedProfiles` | Array of dicts: `Name`, `Endpoint`, optional `OpusModel`, `SonnetModel`, `HaikuModel`, `ModelAlias`, `Environment` (dict), `ID`, `Type` (`apiKey` default or `oidc`), `OIDCIssuer`, `OIDCClientID`, `OIDCScope`, `OIDCTokenType` | Profiles are created automatically and cannot be edited or deleted; developers only enter the key (or sign in for SSO). Without `ID` the profile ID is derived from `Name`, so renaming creates a new profile. For SSO (`oidc` type), `OIDCIssuer` and `OIDCClientID` are required; `OIDCScope` defaults to `openid profile offline_access`; `OIDCTokenType` is `access` (default) or `id`, other values discard the profile. |
 | `AllowedGatewayHosts` | Array of strings (`host` or `*.domain`) | Profiles only for these hosts. The helper does not release keys for other hosts (exit 78). Applies to the gateway host only; the IdP host need not be listed. Empty means no restriction. |
 | `DefaultEndpoint`, `DefaultModelAlias` | String | Prefill when creating your own profiles |
 | `MinimumClaudeCodeVersion` | String | Threshold for the warning about outdated Claude CLIs (default 2.1.288) |

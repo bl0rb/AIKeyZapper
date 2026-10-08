@@ -2,7 +2,7 @@
 //! (read through CFPreferences, so `/Library/Managed Preferences` wins). Windows: registry policy values under
 //! `HKLM\SOFTWARE\Policies\KeyZapper` (or HKCU), same names; `ManagedProfiles` is a JSON string there.
 
-use crate::models::AuthType;
+use crate::models::{AuthType, OidcTokenType};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -27,13 +27,14 @@ pub struct ManagedProfile {
     pub oidc_issuer: Option<String>,
     pub oidc_client_id: Option<String>,
     pub oidc_scope: Option<String>,
+    pub oidc_token_type: OidcTokenType,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ManagedConfig {
     /// `ManagedProfiles`: dicts with `Name`, `Endpoint`, optional `ModelAlias`, `OpusModel`, `SonnetModel`,
     /// `HaikuModel`, `Environment` (dict) and `ID` (UUID); `Type` (`apiKey` default | `oidc`) with
-    /// `OIDCIssuer`, `OIDCClientID` (both required for `oidc`) and `OIDCScope`.
+    /// `OIDCIssuer`, `OIDCClientID` (both required for `oidc`), `OIDCScope` and `OIDCTokenType` (`access` default | `id`).
     pub profiles: Vec<ManagedProfile>,
     /// `AllowedGatewayHosts`: exact hosts or `*.domain`; empty = no restriction.
     pub allowed_gateway_hosts: Vec<String>,
@@ -141,6 +142,11 @@ fn managed_profile(dict: &Map<String, Value>) -> Option<ManagedProfile> {
     if auth_type == AuthType::Oidc && (oidc_issuer.is_none() || oidc_client_id.is_none()) {
         return None;
     }
+    let oidc_token_type = match trimmed("OIDCTokenType").map(|t| t.to_lowercase()).as_deref() {
+        None | Some("access") => OidcTokenType::Access,
+        Some("id") => OidcTokenType::Id,
+        Some(_) => return None,
+    };
     let id = dict.get("ID").and_then(Value::as_str).and_then(crate::models::parse_id).unwrap_or_else(|| derived_id(&name));
     let environment = dict.get("Environment").and_then(Value::as_object).map(|env| {
         env.iter().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string()))).collect::<BTreeMap<_, _>>()
@@ -158,6 +164,7 @@ fn managed_profile(dict: &Map<String, Value>) -> Option<ManagedProfile> {
         oidc_issuer,
         oidc_client_id,
         oidc_scope,
+        oidc_token_type,
     })
 }
 
@@ -288,7 +295,10 @@ mod tests {
                                  "Environment": {"CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"}},
                                 {"Name": "", "Endpoint": "https://x"},
                                 {"Name": "SSO", "Endpoint": "https://gw.firma.example", "Type": "oidc",
-                                 "OIDCIssuer": "https://login.example/t/v2.0", "OIDCClientID": "abc", "OIDCScope": "openid offline_access"},
+                                 "OIDCIssuer": "https://login.example/t/v2.0", "OIDCClientID": "abc", "OIDCScope": "openid offline_access",
+                                 "OIDCTokenType": "ID"},
+                                {"Name": "SSO falsche Token-Art", "Endpoint": "https://gw.firma.example", "Type": "oidc",
+                                 "OIDCIssuer": "https://i", "OIDCClientID": "abc", "OIDCTokenType": "jwt"},
                                 {"Name": "SSO ohne Client", "Endpoint": "https://gw.firma.example", "Type": "oidc", "OIDCIssuer": "https://i"}],
             "AllowedGatewayHosts": ["LiteLLM.firma.example", "*.litellm.firma.example"],
             "AllowKeyExport": false
@@ -297,10 +307,12 @@ mod tests {
         assert_eq!(config.profiles.len(), 2);
         assert_eq!(config.profiles[0].id, derived_id("Projekt Alpha"));
         assert_eq!(config.profiles[0].auth_type, AuthType::ApiKey);
+        assert_eq!(config.profiles[0].oidc_token_type, OidcTokenType::Access);
         let sso = &config.profiles[1];
         assert_eq!(sso.auth_type, AuthType::Oidc);
         assert_eq!((sso.oidc_issuer.as_deref(), sso.oidc_client_id.as_deref()), (Some("https://login.example/t/v2.0"), Some("abc")));
         assert_eq!(sso.oidc_scope.as_deref(), Some("openid offline_access"));
+        assert_eq!(sso.oidc_token_type, OidcTokenType::Id);
         assert!(config.is_endpoint_allowed("https://litellm.firma.example/v1"));
         assert!(config.is_endpoint_allowed("https://eu.litellm.firma.example"));
         assert!(!config.is_endpoint_allowed("https://evil.example"));
