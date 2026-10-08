@@ -146,6 +146,7 @@ impl SettingsBinder {
     /// neutralise values inherited from the IDE/shell environment (otherwise headers get mixed, spike T6/T7/T12).
     /// In pool mode the helper is asked every minute, so an exhausted key is replaced quickly.
     pub fn desired_values(&self, profile: &Profile, pooled: bool) -> BTreeMap<String, String> {
+        let pooled = pooled && !profile.is_sso(); // pooling needs static keys
         let endpoint = profile.endpoint.trim_end_matches('/').to_string();
         let command = if pooled { "pool" } else { "credential" };
         let mut values = BTreeMap::from([
@@ -171,6 +172,7 @@ impl SettingsBinder {
     // MARK: Apply / revert
 
     pub fn apply(&self, profile: &Profile, folder: &str, previous: Option<&WorkspaceBinding>, pooled: bool) -> Result<ApplyResult> {
+        let pooled = pooled && !profile.is_sso();
         let root = paths::canonical_path(folder);
         if !is_directory(&root) {
             return Err(Error::FolderNotFound(root));

@@ -25,6 +25,15 @@ impl CredentialReference {
     }
 }
 
+/// How a profile authenticates against the gateway: static LiteLLM key or OIDC access token (SSO).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AuthType {
+    #[default]
+    ApiKey,
+    Oidc,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Profile {
@@ -47,6 +56,15 @@ pub struct Profile {
     pub environment: Option<BTreeMap<String, String>>,
     #[serde(default = "placeholder_credential")]
     pub credential: CredentialReference,
+    #[serde(default)]
+    pub auth_type: AuthType,
+    /// OIDC issuer URL (Entra ID tenant or Keycloak realm), only for `AuthType::Oidc`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oidc_issuer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oidc_client_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oidc_scope: Option<String>,
 }
 
 fn placeholder_credential() -> CredentialReference {
@@ -63,7 +81,12 @@ pub const RESERVED_ENVIRONMENT_NAMES: [&str; 10] = [
 impl Profile {
     pub fn new(id: String, name: String, endpoint: String, model_alias: String) -> Self {
         let credential = CredentialReference::for_id(&id);
-        Self { id, name, endpoint, model_alias, opus_model: None, sonnet_model: None, haiku_model: None, environment: None, credential }
+        Self { id, name, endpoint, model_alias, opus_model: None, sonnet_model: None, haiku_model: None, environment: None, credential,
+               auth_type: AuthType::ApiKey, oidc_issuer: None, oidc_client_id: None, oidc_scope: None }
+    }
+
+    pub fn is_sso(&self) -> bool {
+        self.auth_type == AuthType::Oidc
     }
 
     /// IDs from files are normalised and `credential` is always derived from the ID.

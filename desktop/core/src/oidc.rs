@@ -1,0 +1,549 @@
+//! OIDC sign-in (authorization code + PKCE, loopback redirect, public client) and token refresh for SSO profiles.
+//! The gateway verifies the OIDC access token; KeyZapper only obtains and refreshes it. Messages never contain
+//! token material.
+
+use crate::errors::{Error, Result};
+use crate::models::Profile;
+use crate::tokens::{TokenSet, TokenStore};
+use crate::{gateway, l};
+use aes_gcm::aead::rand_core::RngCore;
+use aes_gcm::aead::OsRng;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
+use base64::Engine;
+use serde_json::Value;
+use sha2::{Digest, Sha256};
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+pub const DEFAULT_SCOPE: &str = "openid profile offline_access";
+pub const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
+const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
+/// Claude Code's own default for `CLAUDE_CODE_API_KEY_HELPER_TTL_MS` when the profile does not set it.
+const DEFAULT_HELPER_TTL_MS: i64 = 300_000;
+const TTL_ENV: &str = "CLAUDE_CODE_API_KEY_HELPER_TTL_MS";
+
+pub fn unix_now() -> i64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+}
+
+fn fail(message: impl Into<String>) -> Error {
+    Error::Oidc(message.into())
+}
+
+/// https required; http only for loopback hosts (tests, local Keycloak).
+pub fn validate_url(text: &str) -> Result<url::Url> {
+    let url = url::Url::parse(text.trim()).map_err(|_| fail(l!("Ungültige URL: %@", text)))?;
+    let loopback = matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"));
+    if url.scheme() == "https" || (url.scheme() == "http" && loopback) {
+        Ok(url)
+    } else {
+        Err(fail(l!("Die SSO-Adresse muss https verwenden: %@", text)))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Discovery {
+    pub authorization_endpoint: String,
+    pub token_endpoint: String,
+}
+
+pub fn discover(issuer: &str) -> Result<Discovery> {
+    validate_url(issuer)?;
+    let trimmed = issuer.trim().trim_end_matches('/');
+    let url = format!("{trimmed}/.well-known/openid-configuration");
+    let (status, body) = http_get(&url)?;
+    if status != 200 {
+        return Err(fail(l!("Discovery-Dokument nicht abrufbar (HTTP %@).", status)));
+    }
+    let json: Value = serde_json::from_str(&body).map_err(|_| fail(l!("Discovery-Dokument ist kein gültiges JSON.")))?;
+    let field = |name: &str| json.get(name).and_then(Value::as_str).map(String::from);
+    if field("issuer").map(|i| i.trim_end_matches('/').to_string()).as_deref() != Some(trimmed) {
+        return Err(fail(l!("Der Issuer im Discovery-Dokument stimmt nicht mit der Konfiguration überein.")));
+    }
+    let (Some(authorization_endpoint), Some(token_endpoint)) = (field("authorization_endpoint"), field("token_endpoint")) else {
+        return Err(fail(l!("Das Discovery-Dokument enthält keine Endpunkte.")));
+    };
+    validate_url(&authorization_endpoint)?;
+    validate_url(&token_endpoint)?;
+    Ok(Discovery { authorization_endpoint, token_endpoint })
+}
+
+fn random_b64(bytes: usize) -> String {
+    let mut buf = vec![0u8; bytes];
+    OsRng.fill_bytes(&mut buf);
+    B64URL.encode(buf)
+}
+
+/// S256 code challenge of a PKCE verifier.
+pub fn pkce_challenge(verifier: &str) -> String {
+    B64URL.encode(Sha256::digest(verifier.as_bytes()))
+}
+
+/// (verifier, challenge)
+pub fn new_pkce() -> (String, String) {
+    let verifier = random_b64(32);
+    let challenge = pkce_challenge(&verifier);
+    (verifier, challenge)
+}
+
+struct Config<'a> {
+    issuer: &'a str,
+    client_id: &'a str,
+    scope: String,
+}
+
+fn config(profile: &Profile) -> Result<Config<'_>> {
+    let issuer = profile.oidc_issuer.as_deref().map(str::trim).filter(|v| !v.is_empty());
+    let client_id = profile.oidc_client_id.as_deref().map(str::trim).filter(|v| !v.is_empty());
+    let (Some(issuer), Some(client_id)) = (issuer, client_id) else {
+        return Err(fail(l!("Für das SSO-Profil fehlen Issuer oder Client-ID.")));
+    };
+    let scope = profile.oidc_scope.as_deref().map(str::trim).filter(|v| !v.is_empty()).unwrap_or(DEFAULT_SCOPE).to_string();
+    Ok(Config { issuer, client_id, scope })
+}
+
+fn http_get(url: &str) -> Result<(u16, String)> {
+    let mut response = gateway::agent(HTTP_TIMEOUT).get(url).call().map_err(|e| fail(e.to_string()))?;
+    let status = response.status().as_u16();
+    Ok((status, response.body_mut().read_to_string().unwrap_or_default()))
+}
+
+fn post_form(url: &str, fields: &[(&str, &str)]) -> Result<(u16, Value)> {
+    let body = url::form_urlencoded::Serializer::new(String::new()).extend_pairs(fields).finish();
+    let mut response = gateway::agent(HTTP_TIMEOUT)
+        .post(url)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .header("Accept", "application/json")
+        .send(&body)
+        .map_err(|e| fail(e.to_string()))?;
+    let status = response.status().as_u16();
+    let json = serde_json::from_str(&response.body_mut().read_to_string().unwrap_or_default()).unwrap_or(Value::Null);
+    Ok((status, json))
+}
+
+/// Token endpoint reply -> tokens. 400/401 (`invalid_grant` & co) mean the session is over.
+fn token_response(profile_id: &str, status: u16, json: &Value, previous_refresh: Option<&str>, now: i64) -> Result<TokenSet> {
+    if status == 400 || status == 401 {
+        return Err(Error::SessionExpired(profile_id.to_string()));
+    }
+    if !(200..300).contains(&status) {
+        return Err(fail(l!("Token-Endpunkt antwortete mit HTTP %@.", status)));
+    }
+    let text = |name: &str| json.get(name).and_then(Value::as_str).filter(|v| !v.is_empty()).map(String::from);
+    let Some(access_token) = text("access_token") else { return Err(fail(l!("Die Antwort enthält kein Access-Token."))) };
+    let Some(refresh_token) = text("refresh_token").or_else(|| previous_refresh.map(String::from)) else {
+        return Err(fail(l!("Kein Refresh-Token erhalten. Bei Entra ID muss der Scope „offline_access“ enthalten sein.")));
+    };
+    let expires_in = json.get("expires_in").and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse().ok())).unwrap_or(3600);
+    Ok(TokenSet { refresh_token, access_token: Some(access_token), expires_at: Some(now + expires_in) })
+}
+
+/// Seconds an access token must stay valid to be handed out: Claude Code's helper TTL plus 60 s.
+fn margin_secs(profile: &Profile) -> i64 {
+    let ttl_ms = profile
+        .environment
+        .as_ref()
+        .and_then(|env| env.get(TTL_ENV))
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .filter(|v| *v >= 0)
+        .unwrap_or(DEFAULT_HELPER_TTL_MS);
+    ttl_ms / 1000 + 60
+}
+
+fn cached(tokens: &TokenSet, now: i64, margin: i64) -> Option<String> {
+    match (&tokens.access_token, tokens.expires_at) {
+        (Some(token), Some(expires)) if !token.is_empty() && expires - now > margin => Some(token.clone()),
+        _ => None,
+    }
+}
+
+/// Access token for the gateway: the cached one while it stays valid long enough, otherwise exactly one
+/// refresh grant (serialised across processes by a lock file; the store is re-read after taking the lock).
+pub fn access_token(profile: &Profile, store: &TokenStore, now: i64) -> Result<String> {
+    let margin = margin_secs(profile);
+    if let Some(token) = store.read(&profile.id)?.as_ref().and_then(|t| cached(t, now, margin)) {
+        return Ok(token);
+    }
+    let config = config(profile)?;
+    if let Some(dir) = store.file.parent() {
+        crate::paths::create_private_dir(dir).map_err(|e| Error::KeyStore(e.to_string()))?;
+    }
+    let lock = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(store.lock_file())?;
+    lock.lock()?;
+    // Dropping `lock` releases it.
+    let Some(tokens) = store.read(&profile.id)?.filter(|t| !t.refresh_token.is_empty()) else {
+        return Err(Error::SessionExpired(profile.id.clone()));
+    };
+    if let Some(token) = cached(&tokens, now, margin) {
+        return Ok(token);
+    }
+    let discovery = discover(config.issuer)?;
+    let (status, json) = post_form(
+        &discovery.token_endpoint,
+        &[("grant_type", "refresh_token"), ("refresh_token", &tokens.refresh_token), ("client_id", config.client_id), ("scope", &config.scope)],
+    )?;
+    let fresh = token_response(&profile.id, status, &json, Some(&tokens.refresh_token), now)?;
+    store.write(&profile.id, &fresh)?;
+    Ok(fresh.access_token.unwrap_or_default())
+}
+
+/// Interactive sign-in. `open_browser` receives the authorization URL. Fails after `timeout`.
+pub fn login(profile: &Profile, store: &TokenStore, open_browser: impl FnOnce(&str) -> Result<()>, timeout: Duration) -> Result<()> {
+    let config = config(profile)?;
+    let discovery = discover(config.issuer)?;
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    listener.set_nonblocking(true)?;
+    let redirect_uri = format!("http://127.0.0.1:{}/callback", listener.local_addr()?.port());
+    let (verifier, challenge) = new_pkce();
+    let state = random_b64(16);
+    let mut auth = validate_url(&discovery.authorization_endpoint)?;
+    auth.query_pairs_mut()
+        .append_pair("response_type", "code")
+        .append_pair("client_id", config.client_id)
+        .append_pair("redirect_uri", &redirect_uri)
+        .append_pair("scope", &config.scope)
+        .append_pair("state", &state)
+        .append_pair("code_challenge", &challenge)
+        .append_pair("code_challenge_method", "S256");
+    let deadline = Instant::now() + timeout;
+    open_browser(auth.as_str())?;
+    let code = wait_for_callback(&listener, &state, deadline)?;
+    let (status, json) = post_form(
+        &discovery.token_endpoint,
+        &[
+            ("grant_type", "authorization_code"),
+            ("code", &code),
+            ("redirect_uri", &redirect_uri),
+            ("client_id", config.client_id),
+            ("code_verifier", &verifier),
+        ],
+    )?;
+    if status == 400 || status == 401 {
+        return Err(fail(l!("Der Identity Provider hat die Anmeldung abgelehnt (HTTP %@).", status)));
+    }
+    store.write(&profile.id, &token_response(&profile.id, status, &json, None, unix_now())?)
+}
+
+fn wait_for_callback(listener: &TcpListener, state: &str, deadline: Instant) -> Result<String> {
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                if let Some(result) = handle_connection(stream, state) {
+                    return result;
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline {
+                    return Err(fail(l!("Zeitüberschreitung bei der Anmeldung.")));
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+}
+
+/// None = not the callback (favicon, wrong state, garbage): keep waiting.
+fn handle_connection(mut stream: TcpStream, state: &str) -> Option<Result<String>> {
+    let _ = stream.set_nonblocking(false);
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    let mut buf = [0u8; 8192];
+    let mut len = 0;
+    while len < buf.len() && !buf[..len].windows(2).any(|w| w == b"\r\n") {
+        match stream.read(&mut buf[len..]) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => len += n,
+        }
+    }
+    let head = String::from_utf8_lossy(&buf[..len]);
+    let target = head.lines().next().and_then(|line| {
+        let mut parts = line.split(' ');
+        (parts.next()? == "GET").then(|| parts.next()).flatten()
+    });
+    let url = target.and_then(|t| url::Url::parse(&format!("http://127.0.0.1{t}")).ok()).filter(|u| u.path() == "/callback");
+    let Some(url) = url else {
+        respond(&mut stream, 404, &l!("Nicht gefunden."));
+        return None;
+    };
+    let param = |name: &str| url.query_pairs().find(|(k, _)| k == name).map(|(_, v)| v.into_owned());
+    if param("state").as_deref() != Some(state) {
+        respond(&mut stream, 400, &l!("Ungültige Anmeldeantwort."));
+        return None;
+    }
+    if let Some(error) = param("error") {
+        respond(&mut stream, 400, &l!("Anmeldung fehlgeschlagen. Du kannst dieses Fenster schließen."));
+        let detail = param("error_description").unwrap_or_default();
+        return Some(Err(fail(format!("{error} {detail}").trim().to_string())));
+    }
+    let Some(code) = param("code").filter(|c| !c.is_empty()) else {
+        respond(&mut stream, 400, &l!("Ungültige Anmeldeantwort."));
+        return None;
+    };
+    respond(&mut stream, 200, &l!("Anmeldung erfolgreich. Du kannst dieses Fenster schließen und zu KeyZapper zurückkehren."));
+    Some(Ok(code))
+}
+
+fn respond(stream: &mut TcpStream, status: u16, message: &str) {
+    let html = format!("<!doctype html><meta charset=\"utf-8\"><title>KeyZapper</title><body style=\"font-family:sans-serif;margin:3em\"><p>{message}</p></body>");
+    let reason = if status == 200 { "OK" } else { "Error" };
+    let _ = write!(
+        stream,
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{html}",
+        html.len()
+    );
+    let _ = stream.flush();
+}
+
+/// Removes the profile's tokens (sign-out).
+pub fn logout(profile: &Profile, store: &TokenStore) -> Result<()> {
+    store.delete(&profile.id)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SsoStatus {
+    pub logged_in: bool,
+    pub expires_at: Option<i64>,
+}
+
+/// Whether a refresh token exists, and when the cached access token expires.
+pub fn status(profile: &Profile, store: &TokenStore) -> Result<SsoStatus> {
+    let tokens = store.read(&profile.id)?.filter(|t| !t.refresh_token.is_empty());
+    Ok(SsoStatus { logged_in: tokens.is_some(), expires_at: tokens.and_then(|t| t.expires_at) })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    type Handler = Box<dyn Fn(&str, &str) -> (u16, String) + Send>;
+
+    /// Tiny HTTP server on 127.0.0.1; returns the base URL and the received `path body` log.
+    fn mock(handler: impl Fn(&str, &str) -> (u16, String) + Send + 'static) -> (String, Arc<Mutex<Vec<String>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let (thread_log, handler): (_, Handler) = (log.clone(), Box::new(handler));
+        std::thread::spawn(move || {
+            for mut stream in listener.incoming().flatten() {
+                let mut data = Vec::new();
+                let mut chunk = [0u8; 4096];
+                let (head_end, length) = loop {
+                    let n = stream.read(&mut chunk).unwrap_or(0);
+                    data.extend_from_slice(&chunk[..n]);
+                    let text = String::from_utf8_lossy(&data).into_owned();
+                    if let Some(i) = text.find("\r\n\r\n") {
+                        let length = text.lines().find_map(|l| l.to_lowercase().strip_prefix("content-length:").and_then(|v| v.trim().parse().ok())).unwrap_or(0usize);
+                        break (i + 4, length);
+                    }
+                    if n == 0 {
+                        break (data.len(), 0);
+                    }
+                };
+                while data.len() < head_end + length {
+                    let n = stream.read(&mut chunk).unwrap_or(0);
+                    if n == 0 {
+                        break;
+                    }
+                    data.extend_from_slice(&chunk[..n]);
+                }
+                let text = String::from_utf8_lossy(&data).into_owned();
+                let path = text.split(' ').nth(1).unwrap_or("").to_string();
+                let body = text[head_end.min(text.len())..].to_string();
+                thread_log.lock().unwrap().push(format!("{path} {body}"));
+                let (status, reply) = handler(&path, &body);
+                let _ = write!(stream, "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}", reply.len());
+            }
+        });
+        (base, log)
+    }
+
+    fn idp(token_status: u16, token_body: &'static str) -> (String, Arc<Mutex<Vec<String>>>) {
+        let base = Arc::new(Mutex::new(String::new()));
+        let shared = base.clone();
+        let (url, log) = mock(move |path, _| {
+            let base = shared.lock().unwrap().clone();
+            if path.ends_with("/.well-known/openid-configuration") {
+                (200, format!(r#"{{"issuer":"{base}/","authorization_endpoint":"{base}/authorize","token_endpoint":"{base}/token"}}"#))
+            } else {
+                (token_status, token_body.to_string())
+            }
+        });
+        *base.lock().unwrap() = url.clone();
+        (url, log)
+    }
+
+    fn store() -> TokenStore {
+        let dir = std::env::temp_dir().join(format!("kz-oidc-{}", uuid::Uuid::new_v4()));
+        TokenStore { file: dir.join("sso-tokens.json") }
+    }
+
+    fn profile(issuer: &str) -> Profile {
+        let mut p = Profile::new(crate::models::new_id(), "SSO".into(), "https://gw.example.test".into(), String::new());
+        p.auth_type = crate::models::AuthType::Oidc;
+        p.oidc_issuer = Some(issuer.into());
+        p.oidc_client_id = Some("client-1".into());
+        p
+    }
+
+    fn tokens(access: Option<&str>, expires_at: Option<i64>) -> TokenSet {
+        TokenSet { refresh_token: "R1".into(), access_token: access.map(String::from), expires_at }
+    }
+
+    #[test]
+    fn pkce_challenge_matches_rfc7636_example() {
+        assert_eq!(pkce_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"), "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
+        let (verifier, challenge) = new_pkce();
+        assert_eq!(verifier.len(), 43);
+        assert_eq!(challenge, pkce_challenge(&verifier));
+    }
+
+    #[test]
+    fn issuer_must_be_https_or_loopback() {
+        assert!(validate_url("https://login.microsoftonline.com/t/v2.0").is_ok());
+        assert!(validate_url("http://127.0.0.1:8080/realms/x").is_ok());
+        assert!(validate_url("http://localhost/x").is_ok());
+        assert!(validate_url("http://idp.example.test").is_err());
+        assert!(validate_url("ftp://127.0.0.1").is_err());
+    }
+
+    #[test]
+    fn discovery_rejects_other_issuer() {
+        let (url, _) = mock(|_, _| (200, r#"{"issuer":"https://evil.example","authorization_endpoint":"https://a","token_endpoint":"https://t"}"#.into()));
+        assert!(discover(&url).is_err());
+        let (url, _) = idp(200, "{}");
+        assert!(discover(&url).is_ok());
+        assert!(discover(&format!("{url}/")).is_ok());
+    }
+
+    #[test]
+    fn cached_token_is_used_without_network() {
+        let (store, p) = (store(), profile("http://127.0.0.1:1"));
+        store.write(&p.id, &tokens(Some("A1"), Some(10_000))).unwrap();
+        assert_eq!(access_token(&p, &store, 1_000).unwrap(), "A1");
+        // Inside the margin (300 s + 60 s) a refresh is needed, which fails on the closed port without leaking tokens.
+        let err = access_token(&p, &store, 10_000 - 359).unwrap_err();
+        assert!(matches!(err, Error::Oidc(_)));
+        assert!(!err.to_string().contains("R1"));
+    }
+
+    #[test]
+    fn margin_follows_helper_ttl() {
+        let mut p = profile("http://127.0.0.1:1");
+        assert_eq!(margin_secs(&p), 360);
+        p.environment = Some([(TTL_ENV.to_string(), "60000".to_string())].into());
+        assert_eq!(margin_secs(&p), 120);
+    }
+
+    #[test]
+    fn refresh_stores_rotated_token_once() {
+        let (url, log) = idp(200, r#"{"access_token":"A2","refresh_token":"R2","expires_in":3600}"#);
+        let (store, p) = (store(), profile(&url));
+        store.write(&p.id, &tokens(Some("A1"), Some(1_100))).unwrap();
+        assert_eq!(access_token(&p, &store, 1_000).unwrap(), "A2");
+        assert_eq!(access_token(&p, &store, 1_001).unwrap(), "A2");
+        let saved = store.read(&p.id).unwrap().unwrap();
+        assert_eq!((saved.refresh_token.as_str(), saved.expires_at), ("R2", Some(4_600)));
+        let posts: Vec<_> = log.lock().unwrap().iter().filter(|l| l.starts_with("/token")).cloned().collect();
+        assert_eq!(posts.len(), 1);
+        assert!(posts[0].contains("grant_type=refresh_token") && posts[0].contains("refresh_token=R1") && posts[0].contains("client_id=client-1"));
+    }
+
+    #[test]
+    fn refresh_keeps_old_refresh_token_when_not_rotated() {
+        let (url, _) = idp(200, r#"{"access_token":"A2","expires_in":3600}"#);
+        let (store, p) = (store(), profile(&url));
+        store.write(&p.id, &tokens(None, None)).unwrap();
+        assert_eq!(access_token(&p, &store, 0).unwrap(), "A2");
+        assert_eq!(store.read(&p.id).unwrap().unwrap().refresh_token, "R1");
+    }
+
+    #[test]
+    fn invalid_grant_and_missing_tokens_mean_session_expired() {
+        let (url, _) = idp(400, r#"{"error":"invalid_grant"}"#);
+        let (store, p) = (store(), profile(&url));
+        assert_eq!(access_token(&p, &store, 0), Err(Error::SessionExpired(p.id.clone())));
+        store.write(&p.id, &tokens(None, None)).unwrap();
+        assert_eq!(access_token(&p, &store, 0), Err(Error::SessionExpired(p.id.clone())));
+        let (url, _) = idp(500, "oops");
+        let other = profile(&url);
+        store.write(&other.id, &tokens(None, None)).unwrap();
+        assert!(matches!(access_token(&other, &store, 0), Err(Error::Oidc(_))));
+    }
+
+    #[test]
+    fn login_runs_code_flow_with_pkce_and_stores_tokens() {
+        let (url, log) = idp(200, r#"{"access_token":"A1","refresh_token":"R1","expires_in":600}"#);
+        let (store, p) = (store(), profile(&url));
+        login(
+            &p,
+            &store,
+            |auth| {
+                let auth = url::Url::parse(auth).unwrap();
+                let q: std::collections::HashMap<_, _> = auth.query_pairs().into_owned().collect();
+                assert_eq!(q["code_challenge_method"], "S256");
+                assert_eq!(q["client_id"], "client-1");
+                assert!(q["scope"].contains("offline_access"));
+                let callback = format!("{}?code=CODE1&state={}", q["redirect_uri"], q["state"]);
+                std::thread::spawn(move || {
+                    // Stray request first: must be ignored.
+                    let stray = q["redirect_uri"].replace("/callback", "/favicon.ico");
+                    let _ = ureq::get(&stray).call();
+                    let _ = ureq::get(&callback).call();
+                });
+                Ok(())
+            },
+            Duration::from_secs(10),
+        )
+        .unwrap();
+        assert_eq!(store.read(&p.id).unwrap().unwrap().refresh_token, "R1");
+        let post = log.lock().unwrap().iter().find(|l| l.starts_with("/token")).cloned().unwrap();
+        assert!(post.contains("grant_type=authorization_code") && post.contains("code=CODE1") && post.contains("code_verifier="));
+        assert_eq!(status(&p, &store).unwrap().logged_in, true);
+        logout(&p, &store).unwrap();
+        assert!(!status(&p, &store).unwrap().logged_in);
+    }
+
+    #[test]
+    fn login_times_out_and_reports_provider_errors() {
+        let (url, _) = idp(200, "{}");
+        let (store, p) = (store(), profile(&url));
+        assert!(login(&p, &store, |_| Ok(()), Duration::from_millis(300)).is_err());
+        let result = login(
+            &p,
+            &store,
+            |auth| {
+                let q: std::collections::HashMap<_, _> = url::Url::parse(auth).unwrap().query_pairs().into_owned().collect();
+                let callback = format!("{}?error=access_denied&state={}", q["redirect_uri"], q["state"]);
+                std::thread::spawn(move || {
+                    let _ = ureq::get(&callback).call();
+                });
+                Ok(())
+            },
+            Duration::from_secs(10),
+        );
+        assert!(matches!(result, Err(Error::Oidc(m)) if m.contains("access_denied")));
+    }
+
+    #[test]
+    fn login_without_refresh_token_hints_offline_access() {
+        let (url, _) = idp(200, r#"{"access_token":"A1","expires_in":600}"#);
+        let (store, p) = (store(), profile(&url));
+        let result = login(
+            &p,
+            &store,
+            |auth| {
+                let q: std::collections::HashMap<_, _> = url::Url::parse(auth).unwrap().query_pairs().into_owned().collect();
+                let callback = format!("{}?code=C&state={}", q["redirect_uri"], q["state"]);
+                std::thread::spawn(move || {
+                    let _ = ureq::get(&callback).call();
+                });
+                Ok(())
+            },
+            Duration::from_secs(10),
+        );
+        assert!(matches!(result, Err(Error::Oidc(m)) if m.contains("offline_access")));
+        assert!(store.read(&p.id).unwrap().is_none());
+    }
+}
