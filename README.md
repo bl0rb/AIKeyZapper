@@ -4,7 +4,7 @@
 
 # KeyZapper
 
-macOS app that manages approved, project-specific LiteLLM keys in the Keychain and assigns them to local project folders.
+Desktop app for macOS and Windows that manages approved, project-specific LiteLLM keys in a local key file and assigns them to local project folders.
 Claude Code (VS Code, IntelliJ, CLI) then automatically uses the matching key in every project. Several projects open at
 the same time work independently of each other.
 
@@ -16,7 +16,7 @@ even when KeyZapper is closed. The app explains this under “How it works”.
 <sub>Screenshot with made-up sample data.</sub>
 
 ```
-Claude Code ──apiKeyHelper──▶ keyzapper-helper ──▶ macOS Keychain
+Claude Code ──apiKeyHelper──▶ keyzapper-helper ──▶ local key file
      │
      └──── requests with project key ────▶ LiteLLM ──▶ Amazon Bedrock
 ```
@@ -30,7 +30,7 @@ in, so the costs land on the right project without anyone switching keys by hand
 
 ## Features
 
-* Profiles with name, LiteLLM endpoint, optional model alias and key. The key is stored exclusively in the Keychain.
+* Profiles with name, LiteLLM endpoint, optional model alias and key. The key is stored exclusively in the local key file `keys.json` in the app data folder (no Keychain or credential-manager prompts).
 * Assign project folders to a profile. The app only adds to `.claude/settings.local.json` and excludes the file from Git via `.git/info/exclude`.
 * Status per project: active, differing, folder missing, key missing, conflicts with other settings.
 * Test connection against LiteLLM (invalid or blocked key, rate limit, budget, gateway unreachable).
@@ -38,13 +38,13 @@ in, so the costs land on the right project without anyone switching keys by hand
 * Removing an assignment only removes the entries the app set itself.
 * Overview with all profiles, masked keys and assigned projects. Everything can be changed directly; keys can be copied and replaced.
 * Update check against the GitHub releases with one-click installation; the version is shown in the app and under “About KeyZapper”.
-* UI in English and German (follows the macOS system language).
+* UI in English and German (follows the system language).
 * Encrypted backup and restore of profiles, assignments and keys (`.kzbackup`, password-protected).
 * Manageable via Intune: predefined profiles, gateway allowlist, defaults, minimum CLI version, OneDrive backup, update check.
 
 ## Requirements
 
-* macOS 14 or newer
+* macOS 14 or newer or Windows 10 or newer (with the WebView2 runtime)
 * Claude Code ≥ 2.1.288 (VS Code extension or the `claude` CLI for IntelliJ). Older versions only read the project assignment
   at startup directly in the project folder; the app warns in that case.
 
@@ -94,9 +94,9 @@ use the access token.
 
 ## How it works
 
-**Setup (once):** The key goes to the helper via stdin and ends up only in the Keychain. The app writes only references into the project.
+**Setup (once):** The key goes to the helper via stdin and ends up only in the key file `keys.json`. The app writes only references into the project.
 
-![Setup: KeyZapper stores the key in the Keychain via keyzapper-helper and writes settings.local.json in repo A and repo B](docs/diagrams/keyzapper-flow-setup.svg)
+![Setup: KeyZapper stores the key via keyzapper-helper and writes settings.local.json in repo A and repo B](docs/diagrams/keyzapper-flow-setup.svg)
 
 **Runtime (every Claude request):** Claude Code fetches the key for each project itself via the helper, even when the app is closed.
 
@@ -108,7 +108,7 @@ The app writes to `<project>/.claude/settings.local.json`:
 
 | Key | Value |
 |---|---|
-| `apiKeyHelper` | `'/Applications/KeyZapper.app/Contents/Helpers/keyzapper-helper' credential --profile <UUID>` (Key and SSO profiles) |
+| `apiKeyHelper` | `'/Applications/KeyZapper.app/Contents/MacOS/keyzapper-helper' credential --profile <UUID>` on macOS, the quoted path of `keyzapper-helper.exe` in the install folder on Windows (Key and SSO profiles) |
 | `env.ANTHROPIC_BASE_URL` | LiteLLM endpoint of the profile |
 | `env.ANTHROPIC_DEFAULT_OPUS_MODEL`, `…_SONNET_MODEL`, `…_HAIKU_MODEL`, `env.ANTHROPIC_MODEL` | Gateway model names of the profile (if set), e.g. `eu.anthropic.claude-sonnet-5-…` |
 | further `env.*` | Additional environment variables of the profile, e.g. `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1` for Bedrock via LiteLLM |
@@ -133,33 +133,38 @@ never via arguments or logs.
 | 66 | key missing |
 | 67 | session expired (SSO only; sign in again) |
 | 70 | internal |
-| 77 | Keychain locked/denied |
+| 77 | key store (`keys.json`) unreadable or not writable |
 | 78 | metadata corrupt or endpoint not in `AllowedGatewayHosts` |
 
-Metadata without keys is stored in `~/Library/Application Support/KeyZapper/state.json`. Measurement results, version matrix and
+Metadata without keys is stored in `state.json` in the app data folder, the keys in `keys.json` next to it: `~/Library/Application Support/KeyZapper` on macOS (owner-only), `%LOCALAPPDATA%\KeyZapper` on Windows (user profile folder). Keys from the former Keychain-based version are offered for a one-time move on macOS (macOS may ask for permission once per key). Measurement results, version matrix and
 architecture decision are in [docs/feasibility.md](docs/feasibility.md).
 
 ## Distribution via Microsoft Intune
 
-Every Git tag `X.Y.Z` builds the package `KeyZapper-X.Y.Z.pkg` via CI and attaches it to the GitHub release (see [Release](#release)).
+Every Git tag `X.Y.Z` builds the packages `KeyZapper-X.Y.Z.pkg` (macOS) and `KeyZapper-X.Y.Z.msi` (Windows) via CI and attaches both to the GitHub release (see [Release](#release)).
 
-**Create the app:** *Apps › All apps › Create › macOS app (PKG)*. This is the unmanaged PKG type, which also accepts
+**macOS: create the app:** *Apps › All apps › Create › macOS app (PKG)*. This is the unmanaged PKG type, which also accepts
 unsigned packages; it requires the Intune Management Agent ≥ 2308.006.
 * Minimum OS: macOS 14
 * Detection rules › Included apps: `io.github.bl0rb.keyzapper` with the package version, “Ignore app version” = No
 
-**Signing:** With a Developer ID signature (`SIGN_IDENTITY`, `INSTALLER_IDENTITY`) and notarization, Keychain access
-is preserved across updates. With ad-hoc-signed builds, macOS asks once again after every update whether
-`keyzapper-helper` may access it.
+**Windows: create the app:** *Apps › All apps › Create › Line-of-business app*, upload the `.msi` (per-machine install to Program Files).
+
+**Signing:** Keys are not in the Keychain, so signing does not affect key access. For macOS, `SIGN_IDENTITY` and `INSTALLER_IDENTITY`
+(`desktop/scripts/build-pkg.sh`) sign with a Developer ID; without them the build is ad-hoc signed.
 
 **Uninstall:** Intune has no uninstall assignment for PKG apps. First choose “Remove assignment” in the app,
-then delete `/Applications/KeyZapper.app`.
+then delete `/Applications/KeyZapper.app`. On Windows, uninstall the MSI via Intune or *Apps & features*.
 
 ### Configuration
 
-*Devices › Configuration › Create › macOS › Templates › Preference file*, Preference domain name `io.github.bl0rb.keyzapper`.
+**macOS:** *Devices › Configuration › Create › macOS › Templates › Preference file*, Preference domain name `io.github.bl0rb.keyzapper`.
 Template for the Property list file: [docs/intune/io.github.bl0rb.keyzapper.plist](docs/intune/io.github.bl0rb.keyzapper.plist). It contains only
 key-value pairs without the `<plist>`/`<dict>` wrapper, as Intune requires.
+
+**Windows:** The same keys are read as registry values under `HKLM\SOFTWARE\Policies\KeyZapper` (machine policy wins) or `HKCU\SOFTWARE\Policies\KeyZapper`:
+strings as `REG_SZ`, lists as `REG_MULTI_SZ`, switches as `REG_DWORD` 0/1, `ManagedProfiles` as a JSON array in a `REG_SZ`.
+Template: [docs/intune/keyzapper-windows.reg](docs/intune/keyzapper-windows.reg) (deploy e.g. via PowerShell script or Settings catalog).
 
 **Important:** For users receiving SSO profiles via managed settings, do not set `apiKeyHelper`, `env.ANTHROPIC_BASE_URL`,
 `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` in `managed-settings.json` (or `managed-settings.d/*.json`). Managed settings
@@ -174,7 +179,7 @@ outrank project settings; KeyZapper aborts binding on conflict.
 | `OneDriveBackup` | Bool | Backup of profiles and assignments to OneDrive (see below) |
 | `BackupDirectory` | String, `~` allowed | Explicit backup folder; enables the backup even without `OneDriveBackup` |
 | `UpdateCheckEnabled` | Bool (default `true`) | In-app update check. When distributing via Intune, set to `false`, otherwise Intune may overwrite a newer version that was installed by the user. |
-| `AllowKeyExport` | Bool (default `true`) | Whether keys may leave the Keychain via the app. `false`: no copying to the clipboard; backups contain profiles and assignments only. |
+| `AllowKeyExport` | Bool (default `true`) | Whether keys may leave the key store via the app. `false`: no copying to the clipboard; backups contain profiles and assignments only. |
 
 Test locally (user level; values managed via Intune take precedence):
 
@@ -184,8 +189,8 @@ defaults write io.github.bl0rb.keyzapper AllowedGatewayHosts -array litellm.firm
 
 ### OneDrive backup
 
-The app backs up profiles and project assignments to `~/Library/CloudStorage/OneDrive-<Company>/KeyZapper/keyzapper-backup.json`.
-A business account takes precedence over “OneDrive-Personal”. **Keys are never backed up.** On a new Mac the app offers
+The app backs up profiles and project assignments to `~/Library/CloudStorage/OneDrive-<Company>/KeyZapper/keyzapper-backup.json` (macOS) or into the `KeyZapper` folder of the OneDrive folder (Windows).
+A business account takes precedence over “OneDrive-Personal”. **Keys are never backed up.** On a new computer the app offers
 to restore or discard the backup (“Restore” or “Discard”). Assignments are only applied for existing folders; the keys
 have to be entered again. As long as a found backup has been neither restored nor discarded, it is not overwritten.
 
@@ -210,7 +215,7 @@ again when activating.
 ## Encrypted backup and restore
 
 *Backup › Export Backup…* (toolbar or *File* menu) writes profiles, project assignments and keys into a `.kzbackup` file,
-encrypted with a password of at least 12 characters. *Import Backup…* restores them on the same or another Mac:
+encrypted with a password of at least 12 characters. *Import Backup…* restores them on the same or another computer:
 profiles and keys with the same ID are overwritten, and projects are assigned if their folder exists. The password is
 stored nowhere – without it the backup cannot be restored.
 
@@ -223,7 +228,7 @@ this backup is created manually and on demand.
 
 On startup the app checks the latest [GitHub release](https://github.com/bl0rb/ClaudeKeyZapper/releases); you can also check manually via
 *KeyZapper › Check for Updates…* or the version line at the bottom of the app. If a newer version is available, “Install”
-downloads the `.pkg`, verifies the SHA-256 checksum published by GitHub (without a published checksum the update is refused) and opens the macOS installer.
+downloads the installer (`.pkg` on macOS, `.msi` on Windows), verifies the SHA-256 checksum published by GitHub (without a published checksum the update is refused) and opens the system installer.
 Administrator rights are required. Packages are only downloaded from `github.com`. The installed version is shown at the bottom of the
 app and under *KeyZapper › About KeyZapper*.
 
@@ -239,38 +244,40 @@ With Intune, `UpdateCheckEnabled = false` turns the check off. Updates then arri
 ## Development
 
 ```
-Sources/KeyZapperCore   Data model, metadata, Keychain, helper logic, Claude settings, Intune configuration, backup
-Sources/KeyHelper       keyzapper-helper (apiKeyHelper for Claude Code; the only process with Keychain access)
-Sources/KeyZapperApp    SwiftUI interface
-spike/                  Integration prototype with mock gateway (run_spike.sh)
-scripts/                build-app.sh, build-pkg.sh, make-icon.sh
+desktop/core        Rust library keyzapper-core: data model, metadata, key store, helper logic, Claude settings, Intune configuration, backup
+desktop/src-tauri   Tauri app (macOS, Windows) and keyzapper-helper (apiKeyHelper for Claude Code)
+desktop/ui          Web interface (HTML, JS, CSS)
+desktop/locales     English translations (German source strings)
+desktop/scripts     build-pkg.sh (macOS), build-msi.sh (Windows), l10n_check.py
 ```
 
 Tests:
 
 ```bash
-swift test
+cd desktop && cargo test -p keyzapper-core
 ```
 
-End-to-end with the real Keychain, helper and Claude Code against a local mock gateway. It uses only `sk-test-*` keys
-and cleans up afterwards:
+Run the app in development mode (needs Rust and Node.js):
 
 ```bash
-KEYZAPPER_E2E_CLAUDE="$(which claude)" swift test --filter EndToEnd
+cd desktop && npm ci && npm run dev
 ```
 
-Build the app bundle (`dist/KeyZapper.app`) and package (`dist/KeyZapper-<version>.pkg`) locally:
+Build the installer locally (`desktop/dist/KeyZapper-<version>.pkg` on macOS, `.msi` on Windows in Git Bash):
 
 ```bash
-VERSION=1.0.0 scripts/build-pkg.sh
+cd desktop && VERSION=1.0.0 scripts/build-pkg.sh
 ```
 
-The icon is regenerated from [Resources/AppIcon.svg](Resources/AppIcon.svg) with `scripts/make-icon.sh`.
+```bash
+cd desktop && VERSION=1.0.0 scripts/build-msi.sh
+```
 
 ## Release
 
 A tag in the format `X.Y.Z` starts [.github/workflows/release.yml](.github/workflows/release.yml). The workflow runs the
-tests, builds `KeyZapper-X.Y.Z.pkg` (`CFBundleShortVersionString` = tag) and publishes it as a GitHub release.
+tests, builds `KeyZapper-X.Y.Z.pkg` (macOS) and `KeyZapper-X.Y.Z.msi` (Windows) and publishes both in one GitHub release.
+A tag like `X.Y.Z-beta.N` creates a pre-release, which is only offered to installed betas and via “Check for beta”.
 
 ```bash
 git tag 1.0.0
