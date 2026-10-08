@@ -21,6 +21,14 @@ Claude Code ──apiKeyHelper──▶ keyzapper-helper ──▶ macOS-Schlüs
      └──── Anfragen mit Projekt-Key ────▶ LiteLLM ──▶ Amazon Bedrock
 ```
 
+## Warum KeyZapper
+
+LLM-Kosten müssen projektbezogen erfasst und in Projektbudgets gehalten werden. Dafür stellt eine eigens entwickelte
+Middleware vor LiteLLM API-Keys pro Projekt aus. Jeder Key trägt das Budget und die freigegebenen Modelle seines
+Projekts, sodass jede Anfrage mit diesem Key auf das Projekt gebucht wird. KeyZapper sorgt dafür, dass Claude Code immer
+den Key des Projekts verwendet, in dem gerade gearbeitet wird. So landen die Kosten ohne manuelles Key-Wechseln auf dem
+richtigen Projekt.
+
 ## Funktionen
 
 * Profile mit Name, LiteLLM-Endpunkt, optionalem Modellalias und Key. Der Key liegt ausschließlich im Schlüsselbund.
