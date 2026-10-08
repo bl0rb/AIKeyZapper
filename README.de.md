@@ -11,7 +11,7 @@ offene Projekte arbeiten unabhängig voneinander.
 **Einmal zuordnen, danach nie wieder Keys wechseln.** Claude Code holt sich den passenden Key über `keyzapper-helper`
 selbst, auch wenn KeyZapper geschlossen ist. Die App erklärt das unter „So funktioniert’s“.
 
-![KeyZapper-Übersicht mit zwei Profilen, maskierten Keys und zugeordneten Projekten](docs/screenshots/keyzapper-overview.de.png)
+![KeyZapper-Übersicht mit zwei Key-Profilen, einem SSO-Profil und zugeordneten Projekten](docs/screenshots/keyzapper-overview.de.png)
 
 <sub>Screenshot mit ausgedachten Beispieldaten.</sub>
 
@@ -137,8 +137,7 @@ nie über Argumente oder Logs.
 | 77 | Key-Speicher (`keys.json`) nicht lesbar oder nicht beschreibbar |
 | 78 | Metadaten defekt oder Endpunkt nicht in `AllowedGatewayHosts` |
 
-Metadaten ohne Keys liegen in `state.json` im App-Datenordner, die Keys daneben in `keys.json`: `~/Library/Application Support/KeyZapper` unter macOS (nur für den Besitzer), `%LOCALAPPDATA%\KeyZapper` unter Windows (Benutzerprofil-Ordner). Keys aus der früheren Schlüsselbund-Version bietet die App unter macOS einmalig zur Übernahme an (macOS fragt dabei ggf. je Key um Erlaubnis). Messergebnisse, Versionsmatrix und
-Architekturentscheidung stehen in [docs/feasibility.de.md](docs/feasibility.de.md).
+Metadaten ohne Keys liegen in `state.json` im App-Datenordner, die Keys daneben in `keys.json`: `~/Library/Application Support/KeyZapper` unter macOS (nur für den Besitzer), `%LOCALAPPDATA%\KeyZapper` unter Windows (Benutzerprofil-Ordner). Keys aus der früheren Schlüsselbund-Version bietet die App unter macOS einmalig zur Übernahme an (macOS fragt dabei ggf. je Key um Erlaubnis).
 
 ## Verteilung über Microsoft Intune
 

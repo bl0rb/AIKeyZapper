@@ -11,7 +11,7 @@ the same time work independently of each other.
 **Assign once, never switch keys again.** Claude Code fetches the matching key itself via `keyzapper-helper`,
 even when KeyZapper is closed. The app explains this under “How it works”.
 
-![KeyZapper overview with two profiles, masked keys and assigned projects](docs/screenshots/keyzapper-overview.png)
+![KeyZapper overview with two key profiles, one SSO profile and assigned projects](docs/screenshots/keyzapper-overview.png)
 
 <sub>Screenshot with made-up sample data.</sub>
 
@@ -136,8 +136,7 @@ never via arguments or logs.
 | 77 | key store (`keys.json`) unreadable or not writable |
 | 78 | metadata corrupt or endpoint not in `AllowedGatewayHosts` |
 
-Metadata without keys is stored in `state.json` in the app data folder, the keys in `keys.json` next to it: `~/Library/Application Support/KeyZapper` on macOS (owner-only), `%LOCALAPPDATA%\KeyZapper` on Windows (user profile folder). Keys from the former Keychain-based version are offered for a one-time move on macOS (macOS may ask for permission once per key). Measurement results, version matrix and
-architecture decision are in [docs/feasibility.md](docs/feasibility.md).
+Metadata without keys is stored in `state.json` in the app data folder, the keys in `keys.json` next to it: `~/Library/Application Support/KeyZapper` on macOS (owner-only), `%LOCALAPPDATA%\KeyZapper` on Windows (user profile folder). Keys from the former Keychain-based version are offered for a one-time move on macOS (macOS may ask for permission once per key).
 
 ## Distribution via Microsoft Intune
 

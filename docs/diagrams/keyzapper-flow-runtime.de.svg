@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg viewBox="0 0 1000 656" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="keyzapper-runtime-title keyzapper-runtime-desc">
         <title id="keyzapper-runtime-title">KeyZapper zur Laufzeit</title>
-        <desc id="keyzapper-runtime-desc">Claude Code in Repo A und Repo B ruft jeweils keyzapper-helper mit der eigenen Profil-ID auf, der Helper liest genau diesen Key aus dem Schlüsselbund, und Claude sendet die Anfrage mit Key A bzw. Key B an LiteLLM.</desc>
+        <desc id="keyzapper-runtime-desc">Claude Code in Repo A und Repo B ruft jeweils keyzapper-helper mit der eigenen Profil-ID auf, der Helper liest genau diesen Key aus der lokalen Key-Datei, und Claude sendet die Anfrage mit Key A bzw. Key B an LiteLLM.</desc>
         <defs>
           <style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style>
           <marker id="rt-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
@@ -80,13 +80,13 @@
         <text x="442" y="55" fill="rgba(235,108,54,0.85)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CLI</text>
         <text x="500" y="80" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">keyzapper-helper</text>
         <text x="500" y="96" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">credential --profile</text>
-        <!-- Schlüsselbund -->
+        <!-- Key file -->
         <rect x="620" y="40" width="160" height="64" rx="6" fill="#f5f5f5"/>
         <rect x="620" y="40" width="160" height="64" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
         <rect x="628" y="46" width="32" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.40)" stroke-width="0.8"/>
         <text x="644" y="55" fill="rgba(79,93,117,0.85)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">STORE</text>
-        <text x="700" y="80" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Schlüsselbund</text>
-        <text x="700" y="96" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">KeyZapper.LiteLLM</text>
+        <text x="700" y="80" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Key-Datei</text>
+        <text x="700" y="96" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">keys.json</text>
         <!-- LiteLLM (external) -->
         <rect x="800" y="40" width="160" height="64" rx="6" fill="#f5f5f5"/>
         <rect x="800" y="40" width="160" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
@@ -105,5 +105,5 @@
         <line x1="368" y1="620" x2="400" y2="620" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#rt-arrow-link)"/>
         <text x="408" y="624" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">HTTPS-Anfrage an LiteLLM</text>
         <rect x="568" y="614" width="16" height="12" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
-        <text x="592" y="624" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">Fokus: einziger Schlüsselbund-Zugriff</text>
+        <text x="592" y="624" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">Fokus: einziger Key-Datei-Zugriff</text>
       </svg>
