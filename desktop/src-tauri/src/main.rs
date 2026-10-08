@@ -3,7 +3,9 @@
 
 mod model;
 
-use keyzapper_core::{backup, clipboard, gateway, l, legacy_keychain, update};
+use keyzapper_core::errors::Error;
+use keyzapper_core::gateway::CheckResult;
+use keyzapper_core::{backup, clipboard, gateway, l, legacy_keychain, oidc, update};
 use model::{Model, ProfileInput, View};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -226,12 +228,21 @@ struct CheckOutcome {
 #[tauri::command]
 async fn test_connection(app: AppHandle, profile_id: String) -> Result<CheckOutcome, String> {
     blocking(move || {
-        let (endpoint, models, key) = with_model(&app, |m| {
+        let (endpoint, models, key, sso) = with_model(&app, |m| {
             let profile = m.state.profile(&profile_id).cloned().ok_or_else(|| l!("Unbekanntes Profil: %@", profile_id))?;
-            let key = m.keys.read(&profile_id).map_err(|e| e.to_string())?;
-            Ok::<_, String>((profile.endpoint.clone(), profile.configured_models(), key))
+            let key = if profile.is_sso() { m.sso_token(&profile) } else { m.keys.read(&profile_id).map_err(|e| e.to_string()) };
+            Ok::<_, String>((profile.endpoint.clone(), profile.configured_models(), key, profile.is_sso()))
         })?;
+        let key = match key {
+            Ok(key) => key,
+            Err(message) if sso => return Ok(CheckOutcome { success: false, message }),
+            Err(message) => return Err(message),
+        };
         let result = gateway::run(&endpoint, &key, &models);
+        if sso && result == CheckResult::Unauthorized {
+            with_model(&app, |m| m.sso_expired.insert(profile_id.clone()));
+            return Ok(CheckOutcome { success: false, message: l!("Kein aktiver Zugang – Sitzung abgelaufen, bitte neu anmelden.") });
+        }
         refresh_budgets(&app, Some(&profile_id));
         Ok(CheckOutcome { success: result.is_success(), message: result.message() })
     })
@@ -243,6 +254,7 @@ async fn test_connection(app: AppHandle, profile_id: String) -> Result<CheckOutc
 async fn available_models(app: AppHandle, endpoint: String, typed_key: String, profile_id: Option<String>) -> Result<Vec<String>, String> {
     blocking(move || {
         let endpoint = model::valid_endpoint(&endpoint).ok_or_else(|| l!("Bitte eine vollständige http(s)-URL angeben."))?;
+        let sso = with_model(&app, |m| profile_id.as_deref().and_then(|id| m.state.profile(id)).is_some_and(|p| p.is_sso()));
         let key = with_model(&app, |m| {
             if !m.config.is_endpoint_allowed(&endpoint) {
                 return Err(l!(
@@ -252,6 +264,10 @@ async fn available_models(app: AppHandle, endpoint: String, typed_key: String, p
                 ));
             }
             match (typed_key.trim(), profile_id) {
+                ("", Some(id)) if m.state.profile(&id).is_some_and(|p| p.is_sso()) => {
+                    let profile = m.state.profile(&id).cloned().unwrap();
+                    m.sso_token(&profile).map_err(|_| l!("Kein aktiver Zugang – Sitzung abgelaufen, bitte neu anmelden."))
+                }
                 ("", Some(id)) => m.keys.read(&id).map_err(|e| e.to_string()),
                 ("", None) => Err(l!("Für den Modellabruf wird ein Key benötigt.")),
                 (typed, _) => Ok(typed.to_string()),
@@ -260,8 +276,52 @@ async fn available_models(app: AppHandle, endpoint: String, typed_key: String, p
         match gateway::models(&endpoint, &key) {
             Ok(models) if models.is_empty() => Err(l!("Das Gateway hat keine Modelle für diesen Key gemeldet.")),
             Ok(models) => Ok(models),
+            Err(CheckResult::Unauthorized) if sso => Err(l!("Kein aktiver Zugang – Sitzung abgelaufen, bitte neu anmelden.")),
             Err(failure) => Err(failure.message()),
         }
+    })
+    .await
+}
+
+/// Browser sign-in (OIDC authorization code + PKCE); blocks up to `LOGIN_TIMEOUT` on a background thread.
+#[tauri::command]
+async fn sso_login(app: AppHandle, profile_id: String) -> View {
+    blocking(move || {
+        let Some((profile, tokens)) = with_model(&app, |m| {
+            let profile = m.state.profile(&profile_id).filter(|p| p.is_sso()).cloned()?;
+            m.sso_logging_in.insert(profile_id.clone()).then(|| (profile, m.tokens.clone()))
+        }) else {
+            return view(&app);
+        };
+        changed(&app);
+        let opener = app.clone();
+        let result = oidc::login(
+            &profile,
+            &tokens,
+            |url| opener.opener().open_url(url, None::<&str>).map_err(|e| Error::Oidc(e.to_string())),
+            oidc::LOGIN_TIMEOUT,
+        );
+        with_model(&app, |m| {
+            m.sso_logging_in.remove(&profile_id);
+            match result {
+                Ok(()) => {
+                    m.sso_expired.remove(&profile_id);
+                    m.notice = Some(l!("Angemeldet bei „%@“.", profile.name));
+                }
+                Err(e) => m.error = Some(e.to_string()),
+            }
+        });
+        refresh(&app);
+        view(&app)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn sso_logout(app: AppHandle, profile_id: String) -> View {
+    act(app, move |m| {
+        m.sso_logout(&profile_id);
+        m.notice = Some(l!("Abgemeldet."));
     })
     .await
 }
@@ -501,6 +561,8 @@ fn main() {
             store_key,
             delete_profile,
             copy_key,
+            sso_login,
+            sso_logout,
             test_connection,
             available_models,
             suggest_models,

@@ -17,6 +17,25 @@
       <string>1</string>
     </dict>
   </dict>
+  <dict>
+    <key>Name</key>
+    <string>SSO Projekt</string>
+    <key>Type</key>
+    <string>oidc</string>
+    <key>Endpoint</key>
+    <string>https://litellm.firma.example</string>
+    <key>OIDCIssuer</key>
+    <string>https://login.firma.example/t/v2.0</string>
+    <key>OIDCClientID</key>
+    <string>c1abe1234567890abcdef</string>
+    <key>OIDCScope</key>
+    <string>api://c1abe1234567890abcdef/.default offline_access</string>
+    <key>Environment</key>
+    <dict>
+      <key>CLAUDE_CODE_API_KEY_HELPER_TTL_MS</key>
+      <string>900000</string>
+    </dict>
+  </dict>
 </array>
 <key>AllowedGatewayHosts</key>
 <array>

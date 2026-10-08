@@ -4,7 +4,8 @@ use keyzapper_core::helper::{ExitCode, HelperCommand};
 use keyzapper_core::keys::KeyStore;
 use keyzapper_core::managed::ManagedConfig;
 use keyzapper_core::metadata::MetadataStore;
-use keyzapper_core::models::{AppState, Profile, WorkspaceBinding};
+use keyzapper_core::models::{AppState, AuthType, Profile, WorkspaceBinding};
+use keyzapper_core::tokens::{TokenSet, TokenStore};
 use keyzapper_core::paths::canonical_path;
 use keyzapper_core::settings::{self, BindingHealth, SettingsBinder, GIT_EXCLUDE_LINE};
 use serde_json::{json, Value};
@@ -305,6 +306,7 @@ fn helper(dir: &str, budgets: BTreeMap<String, f64>) -> HelperCommand {
     HelperCommand {
         metadata: MetadataStore::new(Path::new(dir).join("state.json"), true),
         store: KeyStore { file: Path::new(dir).join("keys.json") },
+        tokens: TokenStore { file: Path::new(dir).join("sso-tokens.json") },
         config: ManagedConfig::default(),
         remaining_budget: Box::new(move |_, key| budgets.get(key).copied()),
     }
@@ -400,4 +402,109 @@ fn opens_backups_made_by_the_macos_app() {
     assert_eq!(opened.keys, payload().keys);
     assert_eq!(opened.state.profiles[0].id, ALPHA);
     assert_eq!(opened.created_at, "2026-09-21T14:13:20Z");
+}
+
+fn sso() -> Profile {
+    let mut p = Profile::new(BETA.into(), "SSO".into(), "https://gw.example.test".into(), String::new());
+    p.auth_type = AuthType::Oidc;
+    p.oidc_issuer = Some("http://127.0.0.1:1".into());
+    p.oidc_client_id = Some("client".into());
+    p
+}
+
+fn far_future() -> i64 {
+    keyzapper_core::oidc::unix_now() + 3600
+}
+
+#[test]
+fn profiles_without_auth_type_load_as_api_key_and_sso_round_trips() {
+    let old: Profile = serde_json::from_value(json!({"id": ALPHA, "name": "A", "endpoint": "https://x.example"})).unwrap();
+    assert_eq!(old.auth_type, AuthType::ApiKey);
+    assert!(!old.is_sso());
+    assert!(serde_json::to_value(&old).unwrap().get("oidcIssuer").is_none());
+    let value = serde_json::to_value(sso()).unwrap();
+    assert_eq!(value["authType"], "oidc");
+    assert_eq!(value["oidcClientId"], "client");
+    assert_eq!(serde_json::from_value::<Profile>(value).unwrap(), sso());
+}
+
+#[test]
+fn token_store_round_trips_and_stays_out_of_keys_file() {
+    let dir = temp_dir("tokens");
+    let tokens = TokenStore { file: Path::new(&dir).join("sso-tokens.json") };
+    assert!(!tokens.exists(BETA).unwrap());
+    tokens.write(BETA, &TokenSet { refresh_token: "R".into(), access_token: Some("A".into()), expires_at: Some(5) }).unwrap();
+    assert!(tokens.exists(BETA).unwrap());
+    assert_eq!(tokens.read(BETA).unwrap().unwrap().access_token.as_deref(), Some("A"));
+    assert!(!Path::new(&dir).join("keys.json").exists());
+    tokens.delete(BETA).unwrap();
+    assert!(tokens.read(BETA).unwrap().is_none());
+}
+
+#[test]
+fn sso_helper_exit_codes() {
+    let dir = temp_dir("sso-helper");
+    let mut state = AppState::default();
+    state.profiles = vec![sample(), sso()];
+    let h = helper(&dir, BTreeMap::new());
+    h.metadata.save(&state).unwrap();
+    // No session yet.
+    assert_eq!(h.run(&args("status", BETA), String::new).exit_code, ExitCode::SessionExpired);
+    assert_eq!(h.run(&args("credential", BETA), String::new).exit_code, ExitCode::SessionExpired);
+    assert_eq!(ExitCode::SessionExpired as i32, 67);
+    // Cached, still valid access token.
+    h.tokens.write(BETA, &TokenSet { refresh_token: "R".into(), access_token: Some("jwt-1".into()), expires_at: Some(far_future()) }).unwrap();
+    let out = h.run(&args("credential", BETA), String::new);
+    assert_eq!((out.exit_code, out.stdout.as_str()), (ExitCode::Ok, "jwt-1"));
+    assert_eq!(h.run(&args("status", BETA), String::new).exit_code, ExitCode::Ok);
+    // pool and store are refused.
+    assert_eq!(h.run(&args("pool", BETA), String::new).exit_code, ExitCode::ConfigError);
+    assert_eq!(h.run(&args("store", BETA), || "sk-x".into()).exit_code, ExitCode::Usage);
+    assert!(!h.store.exists(BETA).unwrap());
+    // Gateway allowlist still applies to the endpoint.
+    let mut restricted = helper(&dir, BTreeMap::new());
+    restricted.config.allowed_gateway_hosts = vec!["other.example".into()];
+    assert_eq!(restricted.run(&args("credential", BETA), String::new).exit_code, ExitCode::ConfigError);
+    // delete removes the tokens.
+    assert_eq!(h.run(&args("delete", BETA), String::new).exit_code, ExitCode::Ok);
+    assert_eq!(h.run(&args("status", BETA), String::new).exit_code, ExitCode::SessionExpired);
+}
+
+#[test]
+fn pool_skips_sso_profiles() {
+    let dir = temp_dir("sso-pool");
+    let mut sso_profile = sso();
+    sso_profile.endpoint = sample().endpoint;
+    let mut state = AppState::default();
+    state.profiles = vec![sample(), sso_profile];
+    let h = helper(&dir, BTreeMap::from([("sk-own".to_string(), 0.0), ("sk-sso".to_string(), 50.0)]));
+    h.metadata.save(&state).unwrap();
+    h.store.write(ALPHA, "sk-own").unwrap();
+    h.store.write(BETA, "sk-sso").unwrap(); // stray key on an SSO profile must not be pooled
+    assert_eq!(h.run(&args("pool", ALPHA), String::new).stdout, "sk-own");
+}
+
+#[test]
+fn sso_profiles_are_never_bound_with_pool() {
+    let root = temp_dir("sso-proj");
+    let result = binder().apply(&sso(), &root, None, true).unwrap();
+    assert_eq!(result.binding.pooled, None);
+    let helper_cmd = read(&local(&root))["apiKeyHelper"].as_str().unwrap().to_string();
+    assert!(helper_cmd.ends_with(&format!("credential --profile {BETA}")));
+    assert!(read(&local(&root))["env"].get("CLAUDE_CODE_API_KEY_HELPER_TTL_MS").is_none());
+}
+
+#[test]
+fn backup_keeps_sso_metadata_but_never_tokens() {
+    let dir = temp_dir("sso-backup");
+    let tokens = TokenStore { file: Path::new(&dir).join("sso-tokens.json") };
+    tokens.write(BETA, &TokenSet { refresh_token: "refresh-secret".into(), access_token: Some("access-secret".into()), expires_at: Some(1) }).unwrap();
+    let mut payload = payload();
+    payload.state.profiles.push(sso());
+    let plain = serde_json::to_string(&payload).unwrap();
+    assert!(!plain.contains("refresh-secret") && !plain.contains("access-secret"));
+    let opened = backup::open(&backup::seal(&payload, "correct horse battery", 100_000).unwrap(), "correct horse battery").unwrap();
+    let restored = opened.state.profile(BETA).unwrap();
+    assert_eq!((restored.auth_type, restored.oidc_issuer.as_deref(), restored.oidc_client_id.as_deref()), (AuthType::Oidc, Some("http://127.0.0.1:1"), Some("client")));
+    assert!(!opened.keys.contains_key(BETA));
 }

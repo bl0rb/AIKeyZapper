@@ -34,6 +34,10 @@ pub enum Error {
     SettingsConflicts(Vec<SettingsConflict>),
     SettingsUnreadable(String),
     ConcurrentModification(String),
+    /// SSO refresh token missing, expired or revoked: the user has to sign in again.
+    SessionExpired(String),
+    /// SSO sign-in or token request failed (no token material in the message).
+    Oidc(String),
     Io(String),
 }
 
@@ -57,6 +61,8 @@ impl std::fmt::Display for Error {
             Error::ConcurrentModification(p) => {
                 l!("%@ wurde während der Änderung mehrfach von einem anderen Prozess geändert. Bitte erneut versuchen.", p)
             }
+            Error::SessionExpired(_) => l!("Sitzung abgelaufen – bitte in KeyZapper neu anmelden."),
+            Error::Oidc(m) => l!("SSO-Anmeldung fehlgeschlagen: %@", m),
             Error::Io(m) => m.clone(),
         };
         f.write_str(&text)
